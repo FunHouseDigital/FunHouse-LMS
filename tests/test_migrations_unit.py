@@ -32,7 +32,11 @@ def test_expected_tables_are_the_fourteen_design_tables():
 def test_migration_files_are_present_and_ordered():
     files = migrations.migration_files()
     names = [f.name for f in files]
-    assert names == ["001_schema.sql", "002_consents_append_only.sql"]
+    assert names == [
+        "001_schema.sql",
+        "002_consents_append_only.sql",
+        "003_role_facilitator.sql",
+    ]
 
 
 def test_schema_sql_creates_every_expected_table_idempotently():

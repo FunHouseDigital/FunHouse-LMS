@@ -117,6 +117,7 @@ def append_consent(
     captured_by_user_id: Any | None = None,
     device_id: Any | None = None,
     client_timestamp: Any | None = None,
+    client_id: Any | None = None,
 ) -> Any:
     """Append one row to the append-only consent ledger and audit it (Req 11.1).
 
@@ -142,6 +143,9 @@ def append_consent(
             actor.
         device_id: Optional originating device for the audit entry.
         client_timestamp: Optional client-side timestamp for the audit entry.
+        client_id: Optional device-supplied stable action id, stored on the
+            ``consents`` row so the Sync_Service can detect an already-applied
+            consent action and treat a re-send as an idempotent no-op (Req 4.2).
 
     Returns:
         The new ``consents.id``.
@@ -165,6 +169,7 @@ def append_consent(
         ("captured_by_user_id", captured_by_user_id),
         ("device_id", device_id),
         ("client_timestamp", client_timestamp),
+        ("client_id", client_id),
     ):
         if val is not None:
             columns.append(col)

@@ -1,0 +1,65 @@
+{
+  "pbtResults": {
+    "6.2 Write property test for entitlement creation from product rules": {
+      "status": "passed",
+      "lastRunTimestamp": 1784047907821
+    },
+    "6.4 Write property test for unit conservation": {
+      "status": "passed",
+      "lastRunTimestamp": 1784047908341
+    },
+    "6.5 Write property test for decrement/signature atomic pairing": {
+      "status": "passed",
+      "lastRunTimestamp": 1784047911911
+    },
+    "6.7 Write property test for recurring reset": {
+      "status": "passed",
+      "lastRunTimestamp": 1784047912152
+    },
+    "8.2 Write property test for player dedup": {
+      "status": "passed",
+      "lastRunTimestamp": 1784048999363
+    },
+    "8.3 Write property test for append-only consents ledger": {
+      "status": "passed",
+      "lastRunTimestamp": 1784049000361
+    },
+    "8.6 Write property test for scoped, complete player history": {
+      "status": "passed",
+      "lastRunTimestamp": 1784049001376
+    },
+    "11.2 Write property test for scoped per-type revenue sums": {
+      "status": "passed",
+      "lastRunTimestamp": 1784049002372
+    },
+    "12.2 Write property test for deterministic, boundary-correct alerts": {
+      "status": "passed",
+      "lastRunTimestamp": 1784049002996
+    },
+    "14.3 Write property test for batch idempotency": {
+      "status": "passed",
+      "lastRunTimestamp": 1784050394258
+    },
+    "14.4 Write property test for per-action completeness and failure isolation": {
+      "status": "passed",
+      "lastRunTimestamp": 1784050395285
+    },
+    "14.5 Write property test for last-write-wins": {
+      "status": "passed",
+      "lastRunTimestamp": 1784050396277
+    },
+    "15.2 Write property test for prohibited-field stripping": {
+      "status": "passed",
+      "lastRunTimestamp": 1784050397302
+    },
+    "15.3 Write property test for every-write-has-audit": {
+      "status": "passed",
+      "lastRunTimestamp": 1784050398330
+    },
+    "15.4 Write property test for audit atomicity": {
+      "status": "passed",
+      "lastRunTimestamp": 1784050398922
+    }
+  },
+  "executionHistory": {}
+}
