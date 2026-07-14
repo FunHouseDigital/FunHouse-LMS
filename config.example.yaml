@@ -1,0 +1,27 @@
+# Example FunHouse pipeline configuration.
+#
+# Copy to config.yaml and adjust. Every value can also be supplied (or
+# overridden) via environment variables, which take precedence over this file:
+#
+#   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE
+#   S3_BUCKET, AWS_REGION, LLM_PROVIDER, CONFIDENCE_THRESHOLD
+
+# S3 bucket for archived originals (raw/ prefix). Region is af-south-1.
+s3_bucket: funhouse-archive
+
+# AWS region for RDS + S3 (data residency, Req 1.5 / 12.2 / 14.4).
+region: af-south-1
+
+# LLM provider behind the abstraction: "bedrock" (now) or "anthropic" (later).
+llm_provider: bedrock
+
+# Records below this extraction confidence are flagged for review (Req 7.2).
+confidence_threshold: 0.7
+
+database:
+  host: localhost
+  port: 5432
+  dbname: funhouse
+  user: funhouse
+  # password: set via DB_PASSWORD env var in real deployments
+  sslmode: prefer   # use "require" against RDS for TLS in transit (Req 14.3)

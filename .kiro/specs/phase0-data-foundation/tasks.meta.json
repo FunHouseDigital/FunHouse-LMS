@@ -1,0 +1,841 @@
+{
+  "pbtResults": {
+    "3.2 Write property test for idempotent seeding": {
+      "status": "passed",
+      "lastRunTimestamp": 1783979313918
+    },
+    "4.2 Write property test for transparent provider selection": {
+      "status": "passed",
+      "lastRunTimestamp": 1783979692909
+    },
+    "5.2 Write property test for missing subfolders": {
+      "status": "passed",
+      "lastRunTimestamp": 1783979932408
+    },
+    "5.3 Write property test for unsupported-file skipping": {
+      "status": "passed",
+      "lastRunTimestamp": 1783979932577
+    },
+    "6.4 Write property test for extraction context content": {
+      "status": "passed",
+      "lastRunTimestamp": 1783980372192
+    },
+    "6.5 Write property test for the record envelope": {
+      "status": "passed",
+      "lastRunTimestamp": 1783980372272
+    },
+    "7.2 Write property test for text-only lesson parsing": {
+      "status": "passed",
+      "lastRunTimestamp": 1783980746060
+    },
+    "7.3 Write property test for one-lessons-record-per-lesson": {
+      "status": "passed",
+      "lastRunTimestamp": 1783980748571
+    },
+    "7.4 Write property test for allowed embedded metric types": {
+      "status": "passed",
+      "lastRunTimestamp": 1783980751344
+    },
+    "8.3 Write property test for deterministic, LLM-free validation": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981301971
+    },
+    "8.4 Write property test for low-confidence flagging": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981302978
+    },
+    "8.5 Write property test for impossible-date flagging": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981303986
+    },
+    "8.6 Write property test for unknown-name flagging": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981304979
+    },
+    "8.7 Write property test for bad-amount flagging": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981305980
+    },
+    "8.8 Write property test for the clean/flagged partition": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981306980
+    },
+    "8.9 Write property test for the review artifact contents": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981309110
+    },
+    "10.2 Write property test for deduplication": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981998868
+    },
+    "10.3 Write property test for pending consent default": {
+      "status": "passed",
+      "lastRunTimestamp": 1783981998926
+    },
+    "11.5 Write property test for clean-record loading": {
+      "status": "passed",
+      "lastRunTimestamp": 1783982743794
+    },
+    "11.6 Write property test for POPIA filtering": {
+      "status": "passed",
+      "lastRunTimestamp": 1783982746931
+    },
+    "11.7 Write property test for lesson tagging": {
+      "status": "passed",
+      "lastRunTimestamp": 1783982749234
+    },
+    "12.3 Write property test for the audit trail": {
+      "status": "passed",
+      "lastRunTimestamp": 1783983474803
+    },
+    "12.4 Write property test for the append-only ledger": {
+      "status": "passed",
+      "lastRunTimestamp": 1783983475286
+    },
+    "13.2 Write property test for byte-for-byte preservation": {
+      "status": "passed",
+      "lastRunTimestamp": 1783983804240
+    },
+    "13.3 Write property test for provenance-to-archive traceability": {
+      "status": "passed",
+      "lastRunTimestamp": 1783983804305
+    },
+    "14.4 Write property test for end-to-end idempotency": {
+      "status": "passed",
+      "lastRunTimestamp": 1783985230506
+    },
+    "14.5 Write property test for offline stages": {
+      "status": "passed",
+      "lastRunTimestamp": 1783985231302
+    }
+  },
+  "executionHistory": {
+    "1. Establish project skeleton, configuration, and test harness": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341132
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978351110
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979011105
+      }
+    ],
+    "2.1 Author the 14-table schema SQL": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341138
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979013077
+      }
+    ],
+    "2.2 Implement the migration runner": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341145
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979014037
+      }
+    ],
+    "2.3 Implement the append-only consents enforcement": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341153
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979014126
+      }
+    ],
+    "3.1 Implement the seed routine": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341163
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979039652
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979350762
+      }
+    ],
+    "4.1 Implement the abstraction interface and provider registry": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341166
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979362813
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979739731
+      }
+    ],
+    "5.1 Implement subfolder walking and routing": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341170
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979743310
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979956195
+      }
+    ],
+    "6.1 Implement the business-rules system prompt builder": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341173
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979969656
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980419597
+      }
+    ],
+    "6.2 Implement image extraction and the record envelope": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341177
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980420594
+      }
+    ],
+    "6.3 Implement CSV writers for the five target tables": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341181
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980421609
+      }
+    ],
+    "7.1 Implement the `.docx` text parser": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341184
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980432591
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980797402
+      }
+    ],
+    "8.1 Implement the flag rules and clean/flagged partition": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341190
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980803114
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981345696
+      }
+    ],
+    "8.2 Implement the flagged-record review artifact": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341193
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981344696
+      }
+    ],
+    "9. Checkpoint — Ensure all tests pass": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341196
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981361849
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982088879
+      }
+    ],
+    "10.1 Implement dedup_key normalization and merge": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341200
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982091855
+      }
+    ],
+    "11.1 Implement deterministic clean-record loading": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341203
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982098061
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982849641
+      }
+    ],
+    "11.2 Implement natural-key idempotency": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341206
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982850632
+      }
+    ],
+    "11.3 Implement the POPIA field filter": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341210
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982851646
+      }
+    ],
+    "11.4 Implement lesson tagging and original-file reference on load": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341215
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982853599
+      }
+    ],
+    "12.1 Implement logged_by + sync_log auditing": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341219
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982858599
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983586074
+      }
+    ],
+    "12.2 Implement append-only consent writes": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341222
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983587386
+      }
+    ],
+    "13.1 Implement original-file archival": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341226
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983591431
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983893170
+      }
+    ],
+    "14.1 Implement the CLI and run manifest": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341229
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983896660
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783985505432
+      }
+    ],
+    "14.2 Implement error handling and retries": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341233
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783985507970
+      }
+    ],
+    "14.3 Write the command documentation": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341237
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783985508045
+      }
+    ],
+    "16. Final checkpoint — Ensure all tests pass": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783978341241
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783986398184
+      }
+    ],
+    "2. Implement PostgreSQL schema and migration runner": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979014130
+      }
+    ],
+    "2.4 Write property test for universal schema column presence": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979035632
+      }
+    ],
+    "2.5 Write property test for idempotent, non-destructive deploy": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979036634
+      }
+    ],
+    "2.6 Write property test for metric_type domain enforcement": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979037101
+      }
+    ],
+    "3. Implement idempotent seed data": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979350766
+      }
+    ],
+    "3.2 Write property test for idempotent seeding": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979351763
+      }
+    ],
+    "3.3 Write example tests for seed correctness": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979352876
+      }
+    ],
+    "4. Implement the provider-agnostic LLM abstraction": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979739735
+      }
+    ],
+    "4.2 Write property test for transparent provider selection": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979739801
+      }
+    ],
+    "4.3 Write integration test for the Bedrock Batch submission path": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979740688
+      }
+    ],
+    "5. Implement Collect (source routing, offline)": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979956198
+      }
+    ],
+    "5.2 Write property test for missing subfolders": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979957209
+      }
+    ],
+    "5.3 Write property test for unsupported-file skipping": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783979957274
+      }
+    ],
+    "6. Implement Extract — image path (Bedrock Batch)": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980421612
+      }
+    ],
+    "6.4 Write property test for extraction context content": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980422613
+      }
+    ],
+    "6.5 Write property test for the record envelope": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980423611
+      }
+    ],
+    "6.6 Write example test for the five CSVs": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980424613
+      }
+    ],
+    "6.7 Write example test that Extract uses only the abstraction": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980425433
+      }
+    ],
+    "7. Implement Extract — lesson `.docx` path (direct text parse)": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980797408
+      }
+    ],
+    "7.2 Write property test for text-only lesson parsing": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980798417
+      }
+    ],
+    "7.3 Write property test for one-lessons-record-per-lesson": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980799424
+      }
+    ],
+    "7.4 Write property test for allowed embedded metric types": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783980799978
+      }
+    ],
+    "8. Implement Validate (deterministic, LLM-free)": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981345700
+      }
+    ],
+    "8.3 Write property test for deterministic, LLM-free validation": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981346706
+      }
+    ],
+    "8.4 Write property test for low-confidence flagging": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981347700
+      }
+    ],
+    "8.5 Write property test for impossible-date flagging": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981349668
+      }
+    ],
+    "8.6 Write property test for unknown-name flagging": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981350664
+      }
+    ],
+    "8.7 Write property test for bad-amount flagging": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981350706
+      }
+    ],
+    "8.8 Write property test for the clean/flagged partition": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981351697
+      }
+    ],
+    "8.9 Write property test for the review artifact contents": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783981353032
+      }
+    ],
+    "10.2 Write property test for deduplication": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982090832
+      }
+    ],
+    "10. Implement Load — player deduplication": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982091858
+      }
+    ],
+    "10.3 Write property test for pending consent default": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982091994
+      }
+    ],
+    "11.5 Write property test for clean-record loading": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982848821
+      }
+    ],
+    "11. Implement Load — insertion, idempotency, FK resolution, POPIA filter": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982853604
+      }
+    ],
+    "11.6 Write property test for POPIA filtering": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982854353
+      }
+    ],
+    "11.7 Write property test for lesson tagging": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783982854735
+      }
+    ],
+    "12.3 Write property test for the audit trail": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983585066
+      }
+    ],
+    "12.4 Write property test for the append-only ledger": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983587069
+      }
+    ],
+    "12. Implement Load — audit trail and append-only consent ledger": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983587389
+      }
+    ],
+    "13.2 Write property test for byte-for-byte preservation": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983892085
+      }
+    ],
+    "13.3 Write property test for provenance-to-archive traceability": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983893084
+      }
+    ],
+    "13. Implement Archive (S3 raw/ prefix, idempotent)": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783983893173
+      }
+    ],
+    "14.4 Write property test for end-to-end idempotency": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783985504431
+      }
+    ],
+    "14.5 Write property test for offline stages": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783985506437
+      }
+    ],
+    "14. Implement the orchestrator and documented command": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783985508049
+      }
+    ],
+    "15.1 Write integration tests for the end-to-end command": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783985528931
+      },
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783986395838
+      }
+    ],
+    "15. Implement integration and smoke test suites": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783986395843
+      }
+    ],
+    "15.2 Write smoke/configuration checks": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783986396856
+      }
+    ],
+    "15.3 Write example test for the full founding dataset": [
+      {
+        "executionId": "0a5c0900-f675-4c3b-ba64-344e1f674228",
+        "chatSessionId": "651df55f-f9e2-4327-9029-0373fe7fa77f",
+        "timestamp": 1783986397854
+      }
+    ]
+  }
+}
