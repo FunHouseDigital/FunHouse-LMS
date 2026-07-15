@@ -24,7 +24,7 @@ This spec covers the API layer only. The PWA frontend (service worker, IndexedDB
 - **Scope**: The set of records a caller may access, expressed as a `location_id` and, for facilitators, a `school_id`.
 - **Sync_Service**: The FunHouse_API component that accepts a batch of offline-created records and applies them server-side.
 - **Sync_Batch**: A request payload containing an ordered queue of Sync_Actions submitted by one device in a single sync attempt.
-- **Sync_Action**: One offline-created write within a Sync_Batch, targeting a known entity (session, attendance, player, payment, entitlement, or consent) and carrying a `client_id`, `created_at`, and the record payload.
+- **Sync_Action**: One offline-created write within a Sync_Batch, targeting a known entity (session, attendance, player, payment, entitlement, consent, or student_metrics) and carrying a `client_id`, `created_at`, and the record payload.
 - **client_id**: A device-supplied stable identifier for a Sync_Action, used to make re-sending the same action idempotent (no duplicate rows).
 - **created_at (device-origin)**: The device-side creation timestamp on a Sync_Action, used to establish device-origin ordering and to resolve last-write-wins conflicts.
 - **Last_Write_Wins (LWW)**: The MVP conflict rule: when two Sync_Actions target the same record, the one with the later device-origin `created_at` determines the final stored value.
@@ -97,6 +97,7 @@ This spec covers the API layer only. The PWA frontend (service worker, IndexedDB
 5. IF a Sync_Action fails to apply, THEN THE Sync_Service SHALL isolate that failure to the single action, SHALL record the failure in the per-action result, and SHALL continue applying the remaining actions in the Sync_Batch.
 6. WHERE a Sync_Action targets an entity supported by Phase 0 Load semantics, THE Sync_Service SHALL reuse the deterministic dedup and natural-key idempotency rules from Phase 0 Load.
 7. IF a Sync_Action targets a record outside the submitting user's scope, THEN THE Sync_Service SHALL reject that action and SHALL NOT persist it.
+8. WHEN a Sync_Action targets the student_metrics entity, THE Sync_Service SHALL insert a `student_metrics` row using natural-key idempotency (player_id, metric_type, measured_at), SHALL set `logged_by` to the acting user, SHALL stamp `location_id` to the caller's scope, and SHALL append a `sync_log` entry in the same transaction.
 
 ### Requirement 5: Last-Write-Wins Conflict Resolution
 

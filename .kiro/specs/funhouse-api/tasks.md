@@ -244,6 +244,17 @@ Scope is strictly the API layer. No PWA frontend, no lesson generation, no SMS.
 - [x] 16. Final checkpoint — run the full suite
   - Ensure all tests pass, ask the user if questions arise.
 
+- [x] 17. Add student_metrics sync entity (closes D1)
+  - [x] 17.1 Extend `funhouse_api/sync/mapping.py` for student_metrics
+    - Add `ENTITY_STUDENT_METRICS = "student_metrics"`; add it to `VALID_ENTITIES`; add a `MAPPINGS` entry (`table="student_metrics"`, `key_kind=KEY_NATURAL`, `key_column="natural_key"`, `reused_path` documenting the loader insert path); add `_NATURAL_KEY_FIELDS[ENTITY_STUDENT_METRICS] = ("player_id", "metric_type", "measured_at")`; expose the valid `metric_type` set (Phase 0 CHECK)
+    - _Requirements: 4.6, 4.8_ (Design: Data Models → Sync action mapping)
+  - [x] 17.2 Extend the Sync_Service dispatch for student_metrics
+    - Route `student_metrics` through the SAME natural-key insert + audit path used by session/attendance/payment (scope check → `popia.filter_payload` → natural-key idempotency lookup → LWW by device-origin `created_at` with `client_id` tie-break → insert via the reused loader insert path + `append_sync_log`, in one nested transaction; per-action isolation). Set `logged_by` to the acting user and `location_id` to the caller's scope; store `value` as TEXT; respect the `metric_type` CHECK — an invalid `metric_type` or missing required field records the action `rejected` (isolated) without crashing the batch
+    - _Requirements: 4.1, 4.2, 4.6, 4.7, 5.1, 5.2, 4.8_ (Design: Components → Sync_Service)
+  - [x]* 17.3 Write idempotency / LWW / scope tests for student_metrics
+    - Idempotent re-send (no duplicate; second → skipped), LWW on the same natural key, out-of-scope rejection, `logged_by` + `location_id` stamping + `sync_log` appended, and an invalid `metric_type` → `rejected` (isolated, batch continues). Reuse the existing sync generators/helpers and the `db_connection` fixture (skips without PostgreSQL); add a non-DB mapping-wiring assertion
+    - _Requirements: 4.1, 4.2, 4.6, 4.7, 5.1, 5.2, 4.8_
+
 ## Notes
 
 - Tasks marked with `*` are optional test sub-tasks (property-based, example, integration, smoke). Property tests use Hypothesis at min 100 iterations and are tagged `Feature: funhouse-api, Property N: <text>`.
