@@ -1,0 +1,77 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.10.5",
+  "_comment": "DELIBERATELY BAD fixture: it violates BOTH V1 (residency) and V3 (no-forbidden-services). assert_residency.sh and assert_no_forbidden.sh must each exit non-zero on this file.",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_lb.public",
+          "type": "aws_lb",
+          "name": "public",
+          "values": {
+            "name": "funhouse-alb",
+            "load_balancer_type": "application"
+          }
+        },
+        {
+          "address": "aws_cloudwatch_metric_alarm.cpu",
+          "type": "aws_cloudwatch_metric_alarm",
+          "name": "cpu",
+          "values": {
+            "alarm_name": "high-cpu"
+          }
+        }
+      ],
+      "child_modules": [
+        {
+          "address": "module.database",
+          "resources": [
+            {
+              "address": "module.database.aws_db_instance.this",
+              "type": "aws_db_instance",
+              "name": "this",
+              "values": {
+                "identifier": "funhouse-loc1",
+                "instance_class": "db.t4g.micro",
+                "storage_encrypted": true,
+                "publicly_accessible": false,
+                "backup_retention_period": 7,
+                "availability_zone": "eu-west-1a"
+              }
+            }
+          ]
+        },
+        {
+          "address": "module.web",
+          "resources": [
+            {
+              "address": "module.web.aws_s3_bucket.web",
+              "type": "aws_s3_bucket",
+              "name": "web",
+              "values": {
+                "bucket": "funhouse-loc1-web-xyz",
+                "region": "us-east-1"
+              }
+            }
+          ]
+        },
+        {
+          "address": "module.secrets",
+          "resources": [
+            {
+              "address": "module.secrets.aws_ssm_parameter.db_password",
+              "type": "aws_ssm_parameter",
+              "name": "db_password",
+              "values": {
+                "name": "/funhouse/loc1/db/password",
+                "type": "SecureString",
+                "arn": "arn:aws:ssm:us-west-2:123456789012:parameter/funhouse/loc1/db/password"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.10.5",
+  "planned_values": {
+    "root_module": {
+      "child_modules": [
+        {
+          "address": "module.database",
+          "resources": [
+            {
+              "address": "module.database.aws_db_instance.this",
+              "type": "aws_db_instance",
+              "name": "this",
+              "values": {
+                "identifier": "funhouse-loc1",
+                "instance_class": "db.t4g.micro",
+                "multi_az": false,
+                "storage_encrypted": true,
+                "publicly_accessible": false,
+                "backup_retention_period": 7,
+                "availability_zone": "af-south-1a"
+              }
+            }
+          ]
+        },
+        {
+          "address": "module.web",
+          "resources": [
+            {
+              "address": "module.web.aws_s3_bucket.web",
+              "type": "aws_s3_bucket",
+              "name": "web",
+              "values": {
+                "bucket": "funhouse-loc1-web-abcd",
+                "region": "af-south-1"
+              }
+            },
+            {
+              "address": "module.web.aws_cloudfront_distribution.web",
+              "type": "aws_cloudfront_distribution",
+              "name": "web",
+              "values": {
+                "enabled": true
+              }
+            }
+          ]
+        },
+        {
+          "address": "module.secrets",
+          "resources": [
+            {
+              "address": "module.secrets.aws_ssm_parameter.db_password",
+              "type": "aws_ssm_parameter",
+              "name": "db_password",
+              "values": {
+                "name": "/funhouse/loc1/db/password",
+                "type": "SecureString",
+                "arn": "arn:aws:ssm:af-south-1:123456789012:parameter/funhouse/loc1/db/password"
+              }
+            }
+          ]
+        },
+        {
+          "address": "module.api",
+          "resources": [
+            {
+              "address": "module.api.aws_apprunner_service.this",
+              "type": "aws_apprunner_service",
+              "name": "this",
+              "values": {
+                "service_name": "funhouse-loc1-api"
+              }
+            }
+          ]
+        },
+        {
+          "address": "module.network",
+          "resources": [
+            {
+              "address": "module.network.aws_apprunner_vpc_connector.this",
+              "type": "aws_apprunner_vpc_connector",
+              "name": "this",
+              "values": {
+                "vpc_connector_name": "funhouse-loc1-connector"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
