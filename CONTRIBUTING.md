@@ -111,6 +111,8 @@ updated additively.
 
 The live AWS deploy is a founder-run step (see
 [`docs/deployment-runbook.md`](docs/deployment-runbook.md)) and needs real
-credentials. **Phase 2 (Lesson Engine, Bedrock) is gated behind Phase 1 field
+credentials. For a **zero-local-tooling, browser-only deploy** via GitHub
+Actions, see [`docs/deploy-from-github.md`](docs/deploy-from-github.md)
+(Actions → Deploy → Run workflow). **Phase 2 (Lesson Engine, Bedrock) is gated behind Phase 1 field
 acceptance** — do not begin Phase 2 work until the system is deployed and used in
 the real lounge. All data at rest stays in `af-south-1` (POPIA).

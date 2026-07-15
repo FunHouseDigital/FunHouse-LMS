@@ -1,5 +1,11 @@
 # FunHouse Deployment Runbook (Spec 3.5)
 
+> **Zero-local-tooling deploy:** see [`docs/deploy-from-github.md`](deploy-from-github.md)
+> to deploy the whole stack from the browser via the **Deploy** GitHub Actions
+> workflow (Actions → Deploy → Run workflow) — no local AWS CLI, Terraform,
+> Docker, or Node.js required.
+
+
 The ordered, end-to-end procedure to **stand up, operate, and tear down** the
 FunHouse production deployment on AWS **af-south-1**, strictly within PRD §3.1.
 It is written so a **non-founder operator** can follow it without tribal

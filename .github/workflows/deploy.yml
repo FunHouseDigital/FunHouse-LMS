@@ -1,0 +1,211 @@
+name: Deploy
+
+# Browser-only, one-click deploy of the whole FunHouse stack to AWS af-south-1.
+#
+# The founder runs this from the GitHub UI (Actions -> Deploy -> Run workflow) —
+# no local tooling required. It mirrors scripts/deploy.sh:
+#
+#   checkout -> AWS creds -> tf/node setup -> tfstate bucket ensure ->
+#   ECR build/push -> terraform apply (phase 1: migrate+seed on start) ->
+#   capture outputs -> PWA build+publish -> CloudFront invalidation ->
+#   terraform apply (phase 2: CORS) -> print live URLs
+#
+# One-time setup (repo secrets) and full instructions: docs/deploy-from-github.md
+#
+# The container auto-migrates/seeds on first boot (RUN_MIGRATIONS_ON_START /
+# RUN_SEED_ON_START, set true here), so the runner never needs to reach the
+# private RDS. Idempotent and safe to re-run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      location:
+        description: "Location slug to deploy (matches infra/locations/<slug>.tfvars)"
+        type: string
+        required: true
+        default: "loc1"
+      run_seed:
+        description: "Seed idempotent reference data on container start"
+        type: boolean
+        required: true
+        default: true
+
+# Least privilege: this workflow does not need write access to repo contents.
+permissions:
+  contents: read
+
+# Never let two deploys race against the same Terraform state / stack.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: af-south-1
+  ECR_REPO: funhouse-api
+  STATE_BUCKET: funhouse-tfstate-af-south-1
+
+jobs:
+  deploy:
+    name: Deploy FunHouse stack (af-south-1)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: af-south-1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Resolve account + registry
+        id: id
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          echo "account=${ACCOUNT}" >> "$GITHUB_OUTPUT"
+          echo "registry=${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure Terraform state bucket
+        run: |
+          set -euo pipefail
+          if aws s3api head-bucket --bucket "$STATE_BUCKET" 2>/dev/null; then
+            echo "State bucket $STATE_BUCKET already exists — reusing."
+          else
+            echo "Creating state bucket $STATE_BUCKET (versioned + AES256 + no public access)."
+            aws s3api create-bucket \
+              --bucket "$STATE_BUCKET" \
+              --create-bucket-configuration "LocationConstraint=${AWS_REGION}" \
+              2>/dev/null || aws s3api head-bucket --bucket "$STATE_BUCKET"
+            aws s3api put-bucket-versioning \
+              --bucket "$STATE_BUCKET" \
+              --versioning-configuration Status=Enabled
+            aws s3api put-bucket-encryption \
+              --bucket "$STATE_BUCKET" \
+              --server-side-encryption-configuration \
+              '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+            aws s3api put-public-access-block \
+              --bucket "$STATE_BUCKET" \
+              --public-access-block-configuration \
+              BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+            echo "State bucket ready."
+          fi
+
+      - name: Ensure ECR repository
+        run: |
+          set -euo pipefail
+          if aws ecr describe-repositories --repository-names "$ECR_REPO" >/dev/null 2>&1; then
+            echo "ECR repository $ECR_REPO already exists — reusing."
+          else
+            echo "Creating ECR repository $ECR_REPO."
+            aws ecr create-repository \
+              --repository-name "$ECR_REPO" \
+              --image-scanning-configuration scanOnPush=true >/dev/null
+          fi
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Container API image
+        env:
+          REGISTRY: ${{ steps.id.outputs.registry }}
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${ECR_REPO}:latest"
+          echo "Building $IMAGE"
+          docker build -f funhouse_api/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "Pushed $IMAGE"
+
+      - name: Terraform init
+        working-directory: infra
+        run: terraform init -input=false
+
+      - name: Terraform apply (phase 1 — infra + migrate/seed on start)
+        working-directory: infra
+        env:
+          TF_VAR_db_master_username: ${{ secrets.DB_MASTER_USERNAME || 'funhouse_admin' }}
+          TF_VAR_db_master_password: ${{ secrets.DB_MASTER_PASSWORD }}
+          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          terraform apply -input=false -auto-approve \
+            -var-file="locations/${{ inputs.location }}.tfvars" \
+            -var run_migrations_on_start=true \
+            -var run_seed_on_start=${{ inputs.run_seed }} \
+            -var api_image_tag=latest
+
+      - name: Capture Terraform outputs
+        id: tf
+        working-directory: infra
+        run: |
+          set -euo pipefail
+          {
+            echo "apprunner_url=$(terraform output -raw apprunner_url)"
+            echo "cloudfront_domain=$(terraform output -raw cloudfront_domain)"
+            echo "cloudfront_distribution_id=$(terraform output -raw cloudfront_distribution_id)"
+            echo "web_bucket_name=$(terraform output -raw web_bucket_name)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish the Revenue PWA
+        working-directory: web
+        env:
+          VITE_API_BASE_URL: ${{ steps.tf.outputs.apprunner_url }}
+          WEB_BUCKET: ${{ steps.tf.outputs.web_bucket_name }}
+          DISTRIBUTION_ID: ${{ steps.tf.outputs.cloudfront_distribution_id }}
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          aws s3 sync dist "s3://${WEB_BUCKET}/" --delete
+          aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/index.html" "/sw.js"
+
+      - name: Terraform apply (phase 2 — CORS origin)
+        working-directory: infra
+        env:
+          TF_VAR_db_master_username: ${{ secrets.DB_MASTER_USERNAME || 'funhouse_admin' }}
+          TF_VAR_db_master_password: ${{ secrets.DB_MASTER_PASSWORD }}
+          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+          CLOUDFRONT_DOMAIN: ${{ steps.tf.outputs.cloudfront_domain }}
+        run: |
+          set -euo pipefail
+          terraform apply -input=false -auto-approve \
+            -var-file="locations/${{ inputs.location }}.tfvars" \
+            -var run_migrations_on_start=true \
+            -var run_seed_on_start=${{ inputs.run_seed }} \
+            -var api_image_tag=latest \
+            -var "cors_origins=https://${CLOUDFRONT_DOMAIN}"
+
+      - name: Publish deployment summary
+        env:
+          APPRUNNER_URL: ${{ steps.tf.outputs.apprunner_url }}
+          CLOUDFRONT_DOMAIN: ${{ steps.tf.outputs.cloudfront_domain }}
+        run: |
+          set -euo pipefail
+          PWA_URL="https://${CLOUDFRONT_DOMAIN}"
+          {
+            echo "## FunHouse deployment complete"
+            echo ""
+            echo "| Resource | URL |"
+            echo "| --- | --- |"
+            echo "| Revenue PWA (open this) | ${PWA_URL} |"
+            echo "| Container API | ${APPRUNNER_URL} |"
+            echo ""
+            echo "Next: run the smoke-test checklist (docs/smoke-test-checklist.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "PWA:  ${PWA_URL}"
+          echo "API:  ${APPRUNNER_URL}"
