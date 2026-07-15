@@ -30,3 +30,8 @@ container_port      = 8000
 api_image_tag       = "latest"
 
 # cors_origins set on the second apply to the Location 2 CloudFront origin.
+
+# Auto-migrate/seed on container start (Spec 3.5). Default false; the deploy
+# script overrides these to true via -var on its first apply.
+run_migrations_on_start = false
+run_seed_on_start       = false

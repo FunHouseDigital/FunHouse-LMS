@@ -12,6 +12,54 @@ knowledge (Req 9.5).
 > scripts, and the migration shim) live in the repo; this document is the
 > procedure to run them.
 
+## Automated deploy (recommended)
+
+For a hands-off first bring-up (or a re-deploy), run the single Windows
+PowerShell script `scripts/deploy.ps1` from the repo root. It performs the whole
+sequence below — preflight, state bucket, secrets, ECR build/push, Terraform
+apply, PWA build/publish, and the CORS second apply — and is idempotent, so it
+is safe to re-run.
+
+**Prerequisites**
+
+- AWS CLI v2, **Terraform ≥ 1.10**, and **Docker Desktop running** on PATH.
+- **Node.js + npm** on PATH for the PWA build step (optional — if absent the
+  script prints the exact manual PWA commands and continues).
+- An authenticated AWS session for af-south-1:
+
+  ```powershell
+  aws sso login --profile funhouse
+  ```
+
+**Run it**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1
+# optional overrides:
+#   -Location loc1  -Region af-south-1  -Profile funhouse
+```
+
+At the end it prints the **CloudFront URL** (open this) and the **App Runner
+URL**, then points you at `docs/smoke-test-checklist.md`.
+
+> **This replaces the manual in-VPC one-off migration (Step 5).** On its first
+> apply the script sets `run_migrations_on_start=true` and
+> `run_seed_on_start=true`, so App Runner injects `RUN_MIGRATIONS_ON_START` /
+> `RUN_SEED_ON_START` and the container applies the (idempotent) schema and
+> reference seed itself on start-up. If migrations fail the container exits
+> non-zero and App Runner keeps the previous healthy version. The standing
+> Terraform default for both flags is `false`, so the manual path below still
+> works unchanged when you deploy an image without them.
+
+A POSIX bash equivalent, `scripts/deploy.sh`, is provided for non-Windows
+operators; PowerShell is the supported path for the founder.
+
+The **manual, step-by-step procedure below remains the fallback** — use it when
+you need to run an individual phase by hand, or to understand exactly what the
+script automates.
+
+---
+
 ## Locked decisions
 
 - **Schema migration** runs from an **ephemeral in-VPC one-off** that reaches

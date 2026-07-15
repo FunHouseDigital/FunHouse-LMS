@@ -30,3 +30,10 @@ api_image_tag       = "latest"
 # cors_origins is left empty on the first apply and set to the CloudFront origin
 # on the second apply (Req 7.3), e.g.:
 # cors_origins = "https://dxxxxxxxxxxxxx.cloudfront.net"
+
+# Auto-migrate/seed on container start (Spec 3.5). Default false here: the
+# one-command deploy script (scripts/deploy.ps1) overrides these to true via
+# -var on its first apply. Leaving them false preserves the manual in-VPC
+# one-off migration path.
+run_migrations_on_start = false
+run_seed_on_start       = false

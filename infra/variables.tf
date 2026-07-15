@@ -134,3 +134,23 @@ variable "cors_origins" {
   type        = string
   default     = ""
 }
+
+
+# -----------------------------------------------------------------------------
+# Auto-migrate / seed on container start (Spec 3.5 one-command deploy)
+# -----------------------------------------------------------------------------
+# Default false: the standing configuration keeps the manual in-VPC one-off
+# migration path unchanged. The one-command deploy script sets these true on its
+# first apply so the container applies the (idempotent) schema and reference
+# data itself, replacing the manual one-off step.
+variable "run_migrations_on_start" {
+  description = "Pass RUN_MIGRATIONS_ON_START=true to App Runner so the container runs idempotent migrations at startup (Spec 3.5). Default false."
+  type        = bool
+  default     = false
+}
+
+variable "run_seed_on_start" {
+  description = "Pass RUN_SEED_ON_START=true to App Runner so the container runs the idempotent reference-data seed at startup (Spec 3.5). Default false."
+  type        = bool
+  default     = false
+}

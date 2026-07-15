@@ -62,6 +62,12 @@ module "api" {
 
   # Set on the second apply once the CloudFront origin is known (Req 7.3).
   cors_origins = var.cors_origins
+
+  # Flag-gated auto-migrate/seed on container start (Spec 3.5). Default false;
+  # the deploy script sets these true on the first apply for a hands-off
+  # bring-up (replacing the manual in-VPC one-off).
+  run_migrations_on_start = var.run_migrations_on_start
+  run_seed_on_start       = var.run_seed_on_start
 }
 
 module "web" {

@@ -114,6 +114,10 @@ resource "aws_apprunner_service" "this" {
           TLS_REQUIRED          = "true"    # API rejects non-HTTPS (Req 4.3)
           AWS_REGION            = var.region
           FUNHOUSE_CORS_ORIGINS = var.cors_origins
+          # Flag-gated startup migrate/seed (idempotent). Default false; the
+          # deploy script sets these true for a hands-off first bring-up.
+          RUN_MIGRATIONS_ON_START = var.run_migrations_on_start ? "true" : "false"
+          RUN_SEED_ON_START       = var.run_seed_on_start ? "true" : "false"
         }
 
         # Secret / SSM-sourced values injected by ARN reference (Req 5.3).

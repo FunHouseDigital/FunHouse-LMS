@@ -51,6 +51,13 @@ ENV VIRTUAL_ENV=/opt/venv
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
+# Flag-gated entrypoint: optionally runs idempotent migrations/seed on start
+# (RUN_MIGRATIONS_ON_START / RUN_SEED_ON_START) then execs the CMD below. With
+# the flags unset the behaviour is unchanged (it just runs uvicorn). Copied and
+# made world-executable as root so the non-root appuser can run it.
+COPY funhouse_api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
+
 # Run as an unprivileged user.
 RUN useradd --create-home --uid 10001 appuser
 USER appuser
@@ -59,7 +66,9 @@ WORKDIR /home/appuser
 # App Runner health check hits GET /health (no DB access required).
 EXPOSE 8000
 
-# Serve the ASGI app. create_app() is a factory in funhouse_api/app.py, so
-# uvicorn must be told with --factory. Bind 0.0.0.0:8000 (matches the IaC
-# container_port / App Runner config). No --reload in production.
+# The entrypoint performs optional migrate/seed then `exec "$@"` — so the CMD
+# below is the server command it hands off to. create_app() is a factory in
+# funhouse_api/app.py, so uvicorn must be told with --factory. Bind 0.0.0.0:8000
+# (matches the IaC container_port / App Runner config). No --reload in production.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "funhouse_api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
