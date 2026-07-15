@@ -53,6 +53,7 @@ ENTITY_SESSION = "session"
 ENTITY_ATTENDANCE = "attendance"
 ENTITY_PAYMENT = "payment"
 ENTITY_ENTITLEMENT = "entitlement"
+ENTITY_STUDENT_METRICS = "student_metrics"
 
 VALID_ENTITIES: frozenset[str] = frozenset(
     {
@@ -62,6 +63,21 @@ VALID_ENTITIES: frozenset[str] = frozenset(
         ENTITY_ATTENDANCE,
         ENTITY_PAYMENT,
         ENTITY_ENTITLEMENT,
+        ENTITY_STUDENT_METRICS,
+    }
+)
+
+#: Allowed ``student_metrics.metric_type`` values -- mirrors the Phase 0 schema
+#: CHECK on ``student_metrics.metric_type`` (``001_schema.sql`` table 13). The
+#: Sync_Service validates against this set so an invalid metric_type is a clean
+#: per-action ``rejected`` rather than a mid-transaction CHECK violation (Req 4.8).
+VALID_METRIC_TYPES: frozenset[str] = frozenset(
+    {
+        "typing_wpm",
+        "typing_accuracy",
+        "homework_done",
+        "quiz_score",
+        "observation",
     }
 )
 
@@ -137,6 +153,13 @@ MAPPINGS: dict[str, EntityMapping] = {
         key_column="client_id",
         reused_path="Entitlement_Engine.create_entitlement / draw",
     ),
+    ENTITY_STUDENT_METRICS: EntityMapping(
+        entity=ENTITY_STUDENT_METRICS,
+        table="student_metrics",
+        key_kind=KEY_NATURAL,
+        key_column="natural_key",
+        reused_path="loader natural-key insert path (value->TEXT) + audit.append_sync_log",
+    ),
 }
 
 
@@ -149,6 +172,7 @@ _NATURAL_KEY_FIELDS: Mapping[str, tuple[str, ...]] = {
     ENTITY_SESSION: ("player_id", "session_type", "started_at", "ended_at"),
     ENTITY_ATTENDANCE: ("player_id", "attendance_date", "session_id"),
     ENTITY_PAYMENT: ("player_id", "product_id", "amount_cents", "paid_at"),
+    ENTITY_STUDENT_METRICS: ("player_id", "metric_type", "measured_at"),
 }
 
 

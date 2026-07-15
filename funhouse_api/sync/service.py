@@ -32,7 +32,9 @@ Each action runs on its own with the connection returned to a clean state
 (``rollback``) before it starts. Direct-insert entities (session/attendance/
 payment) and the player path perform their write and ``append_sync_log`` and
 then ``commit`` only if both succeeded -- so injecting a failing audit append
-(Property 12) rolls the whole write back. Consents reuse
+(Property 12) rolls the whole write back. ``student_metrics`` follows the same
+natural-key insert/LWW path (location-scoped only, ``value`` stored as TEXT).
+Consents reuse
 :func:`funhouse_pipeline.load.consent.append_consent` and entitlements reuse the
 :mod:`funhouse_api.entitlements.engine`, both of which keep the write and its
 audit entry in one transaction by construction.
@@ -251,7 +253,7 @@ def _apply_action(
             conn, scope, action, clean, created_at,
             logged_by=logged_by, location_timezone=location_timezone,
         )
-    # session / attendance / payment -> natural-key insert-or-LWW.
+    # session / attendance / payment / student_metrics -> natural-key insert-or-LWW.
     return _apply_natural_key(
         conn, scope, action, clean, created_at, entity=entity, logged_by=logged_by
     )
@@ -522,6 +524,10 @@ _INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     mapping.ENTITY_PAYMENT: (
         "player_id", "product_id", "amount_cents", "method", "paid_at", "logged_by",
     ),
+    # student_metrics is LOCATION-scoped only (no school_id column); value is TEXT.
+    mapping.ENTITY_STUDENT_METRICS: (
+        "player_id", "lesson_id", "metric_type", "value", "measured_at", "logged_by",
+    ),
 }
 
 # Non-identity value columns updated when an incoming action wins LWW (Req 5.1).
@@ -529,6 +535,8 @@ _MUTABLE_COLUMNS: dict[str, tuple[str, ...]] = {
     mapping.ENTITY_SESSION: ("duration_minutes",),
     mapping.ENTITY_ATTENDANCE: ("present",),
     mapping.ENTITY_PAYMENT: ("method",),
+    # The measured value is the mutable field; a later edit overwrites it (LWW).
+    mapping.ENTITY_STUDENT_METRICS: ("value",),
 }
 
 
@@ -543,6 +551,11 @@ def _normalize_natural_payload(entity: str, payload: dict[str, Any]) -> dict[str
     if entity == mapping.ENTITY_PAYMENT:
         if normalized.get("amount_cents") is None:
             normalized["amount_cents"] = amount_to_cents(normalized.get("amount"))
+    if entity == mapping.ENTITY_STUDENT_METRICS:
+        # The column is TEXT (holds numeric metrics and free-text observations);
+        # coerce any device-supplied value to a string so it stores cleanly.
+        if normalized.get("value") is not None:
+            normalized["value"] = str(normalized["value"])
     return normalized
 
 
@@ -572,6 +585,19 @@ def _apply_natural_key(
         return ActionResult(
             action.client_id, entity, STATUS_REJECTED, reason="bad_amount"
         )
+
+    if entity == mapping.ENTITY_STUDENT_METRICS:
+        # Respect the Phase 0 metric_type CHECK and NOT-NULL value up front, so an
+        # invalid or incomplete metric is a clean isolated rejection (Req 4.8, 4.5)
+        # rather than a mid-transaction constraint error.
+        if normalized.get("metric_type") not in mapping.VALID_METRIC_TYPES:
+            return ActionResult(
+                action.client_id, entity, STATUS_REJECTED, reason="invalid_metric_type"
+            )
+        if normalized.get("value") is None:
+            return ActionResult(
+                action.client_id, entity, STATUS_REJECTED, reason="value_required"
+            )
 
     natural_key = mapping.compute_sync_natural_key(entity, normalized)
 

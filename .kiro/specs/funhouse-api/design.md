@@ -223,7 +223,7 @@ Claims         { sub: UUID, role: Role, location_id: UUID|None, school_id: UUID|
 **Sync batch**
 ```
 SyncAction  { client_id: str, entity: EntityType, created_at: datetime, payload: dict }
-            # EntityType ∈ {session, attendance, player, payment, entitlement, consent}
+            # EntityType ∈ {session, attendance, player, payment, entitlement, consent, student_metrics}
 SyncBatch   { actions: list[SyncAction] }                  # ordered queue from one device
 ActionResult{ client_id: str, entity: EntityType, status: "applied"|"skipped"|"rejected",
               record_id: UUID|None, reason: str|None }
@@ -268,8 +268,11 @@ Every write reuses the deterministic Phase 0 path; the Sync_Service is orchestra
 | `attendance` | `natural_key` | loader insert path | `ON CONFLICT (natural_key) DO NOTHING` (4.2) |
 | `payment` | `natural_key` | loader insert path | `amount_to_cents`, product FK resolve (10.1, 10.2) |
 | `entitlement` | `client_id` | `Entitlement_Engine.create/draw` | draw records digital signature (8.x) |
+| `student_metrics` | `natural_key` (`compute_sync_natural_key` over `player_id`, `metric_type`, `measured_at`) | reused loader insert path + `append_sync_log` | location-scoped only (no `school_id`), player_id-keyed (D2-compatible), `value` stored as TEXT, `metric_type` CHECK respected (4.8) |
 
 All paths run `popia.filter_payload` first (14.1) and `append_sync_log` in the same transaction as the write (4.4, 14.2, 14.6).
+
+Adding `student_metrics` to the sync path **closes Dependency D1**: the PWA's typing/homework/quiz/observation metrics can now be queued offline and synced to the API idempotently, keyed on `player_id` (consistent with session/attendance/payment and compatible with the PWA's local-id resolution, Dependency D2).
 
 
 ## Correctness Properties
