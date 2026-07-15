@@ -13,11 +13,6 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServices } from '../state/servicesState';
-import {
-  getAllLocalRecords,
-  getCachedRead,
-  type LocalRecord,
-} from '../store/localStore';
 import { getEntitlementDisplays } from '../domain/entitlementCalculator';
 import type { EntitlementDisplay } from '../domain/entitlementCalculator';
 import {
@@ -28,36 +23,7 @@ import {
   type SessionInput,
   type SessionPayment,
 } from '../domain/captures/session';
-import { playerName } from '../domain/roster';
-import type { PlayerOut } from '../domain/types';
-
-interface PlayerChoice {
-  id: string;
-  name: string;
-}
-
-function useKnownPlayers(): PlayerChoice[] {
-  const [players, setPlayers] = useState<PlayerChoice[]>([]);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const cached = await getCachedRead<PlayerOut[]>('players');
-      const roster: PlayerChoice[] = (cached?.data ?? []).map((p) => ({
-        id: p.id,
-        name: playerName(p),
-      }));
-      const local = await getAllLocalRecords('players');
-      const localChoices: PlayerChoice[] = local
-        .map((r: LocalRecord) => ({ id: String(r.local_id), name: String(r.name ?? 'New player') }))
-        .filter((c) => !roster.some((r) => r.id === c.id));
-      if (alive) setPlayers([...roster, ...localChoices]);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return players;
-}
+import { useKnownPlayers } from './useKnownPlayers';
 
 export function LogSession() {
   const { commit } = useServices();

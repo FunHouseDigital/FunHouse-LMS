@@ -15,9 +15,10 @@
 /**
  * Entities the client can produce actions for.
  *
- * `student_metrics` is forward-compatible ONLY: it is NOT accepted by the
- * Spec 2 `POST /sync` endpoint (Dependency D1). The client queues such actions
- * in a `blocked` sub-status until the API adds the entity.
+ * `student_metrics` is now a live `POST /sync` entity (Dependency D1 resolved,
+ * Container API PR #3): it is a natural-key entity keyed on
+ * `player_id`/`metric_type`/`measured_at`. Metrics enqueue as normal `unsynced`
+ * actions and are included in flush batches like the other capture entities.
  */
 export type EntityType =
   | 'player'
@@ -33,7 +34,10 @@ export type EntityType =
  * - `unsynced`: awaiting transmission (an Unsynced_Item).
  * - `applied` / `skipped`: terminal success results from the server.
  * - `rejected`: server rejected the action; retained locally with a reason.
- * - `blocked`: locally held, excluded from batches (e.g. `student_metrics`, D1).
+ * - `blocked`: general forward-compatibility mechanism — locally held and
+ *   excluded from batches until an entity is accepted by the API. No capture
+ *   currently routes into it (metrics now sync live once D1 was resolved), but
+ *   the mechanism is retained for any future not-yet-accepted entity.
  */
 export type SyncStatus = 'unsynced' | 'applied' | 'skipped' | 'rejected' | 'blocked';
 
@@ -134,10 +138,15 @@ export interface EntitlementDrawPayload {
   amount: number;
 }
 
-/** Forward-compatible metrics payload (Dependency D1). */
+/**
+ * `student_metrics` sync payload (Dependency D1 resolved). Natural-key entity
+ * keyed server-side on `player_id`/`metric_type`/`measured_at`; the server sets
+ * `logged_by`/`location` and stores `value` as TEXT (coercing the numeric
+ * value). The student's display name is personal data kept encrypted at rest
+ * locally and is deliberately NOT sent on the wire.
+ */
 export interface StudentMetricsPayload {
   player_id?: string;
-  player_name?: string;
   metric_type: 'typing_wpm' | 'typing_accuracy';
   value: number;
   measured_at: string;

@@ -30,7 +30,7 @@ The build order follows the layered architecture from the design (UI → App Sta
     - _Design: Testing Strategy → Tooling_
 
 - [x] 2. Define TypeScript domain types matching the API contract
-  - Create `src/domain/types.ts` with the Data Models from the design: `EntityType` (incl. forward-compatible `student_metrics`), `SyncStatus`, `SyncAction`, `StoredSyncAction`, `ActionResult`, `SyncResult`.
+  - Create `src/domain/types.ts` with the Data Models from the design: `EntityType` (incl. live `student_metrics`, D1 resolved), `SyncStatus`, `SyncAction`, `StoredSyncAction`, `ActionResult`, `SyncResult`.
   - Add per-entity payloads: `PlayerPayload`, `ConsentPayload`, `ConsentType`, `SessionPayload`, `AttendancePayload`, `PaymentPayload`, `EntitlementCreatePayload`, `EntitlementDrawPayload`, `StudentMetricsPayload`.
   - Add cached-read types: `PlayerOut`, `BalanceOut` (`remaining_units: number | null` integer minutes), `PlayerHistory`, `RevenueSummary`, `Alert`, `ProductOut`, `LoginResponse`, `Session`, `Meta`, `EncryptedField`.
   - _Requirements: 4.2, 5.3, 8.2_
@@ -238,8 +238,8 @@ The build order follows the layered architecture from the design (UI → App Sta
     - _Design: Attendance & school sessions — Attendance_Module_
 
   - [x] 11.14 Implement the Metrics grid (`Metrics_Module`)
-    - Create `src/domain/captures/metrics.ts` + `src/ui/Metrics.tsx`: grid columns student name / words-per-minute / accuracy; accept only non-negative numeric input for wpm/accuracy; on save write a `student_metrics` record and enqueue a forward-compatible `student_metrics` action (payload `{player_name|player_id, metric_type: 'typing_wpm'|'typing_accuracy', value, measured_at}`) held in the `blocked` sub-status; offline-capable.
-    - **Note (Dependency D1):** `student_metrics` is NOT a valid Spec 2 `/sync` entity; these actions queue locally and are excluded from batches (a send would return `rejected: unknown_entity`). The client stays forward-compatible so queued actions flush unchanged once the API adds the entity. No backend change is made here.
+    - Create `src/domain/captures/metrics.ts` + `src/ui/Metrics.tsx`: grid columns student / words-per-minute / accuracy; each row selects a registered player (reusing the Log Session player search/select control) so the metric is keyed on `player_id`; accept only non-negative numeric input for wpm/accuracy; on save write a `student_metrics` record and enqueue a live `student_metrics` action (payload `{player_id, metric_type: 'typing_wpm'|'typing_accuracy', value, measured_at}`) with the normal `unsynced` status; offline-capable.
+    - **Note (Dependency D1 — RESOLVED, Container API PR #3):** `student_metrics` is now an accepted `/sync` entity, a natural-key entity keyed on `player_id`/`metric_type`/`measured_at` (server sets `logged_by`/`location`, stores `value` as TEXT). Metrics enqueue `unsynced` and the Sync_Engine includes them in the next batch, reconciling them like the other capture entities; a metric for an offline-registered player gets the same Dependency-D2 local-id rewrite as session/payment. The student's display name stays encrypted at rest and is never sent on the wire. The prior `blocked` forward-compatibility hold is no longer used for metrics (the `blocked` mechanism is retained generically for any future not-yet-accepted entity).
     - _Requirements: 15.1, 15.2, 15.3, 15.4_
     - _Design: Metrics — Metrics_Module; Dependency D1_
 
@@ -313,7 +313,7 @@ The build order follows the layered architecture from the design (UI → App Sta
 - Tasks marked with `*` are optional test sub-tasks and can be skipped for a faster MVP; core implementation sub-tasks must not be skipped.
 - Each task references specific requirement clauses and/or design sections for traceability.
 - All 22 correctness properties are implemented as single fast-check property tests (≥100 runs), tagged `Feature: revenue-pwa, Property N: <text>`, and placed next to the code they validate.
-- **Dependency D1 (metrics):** metrics queue locally in a forward-compatible shape but cannot sync until the API adds a `student_metrics` entity — the client holds them as `blocked` and stays forward-compatible. No backend change is in scope.
+- **Dependency D1 (metrics) — RESOLVED (Container API PR #3):** `student_metrics` is now an accepted `/sync` entity keyed on `player_id`/`metric_type`/`measured_at`. Metrics are captured against a selected registered player and sync live as normal `unsynced` actions (included in flush batches and reconciled like the other entities, with D2 local-id resolution for offline-registered players). The earlier `blocked` forward-compatibility hold is no longer used for metrics.
 - **Dependency D2 (local-id resolution)** is handled in task 8.6; **Dependency D3 (revenue filters)** fallback is handled in task 12.1.
 - Scope is strictly the PWA client under `web/`; the Python `funhouse_api/` and `funhouse_pipeline/` are not modified.
 

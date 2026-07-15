@@ -1,13 +1,18 @@
 /**
- * Metrics entry screen — `Metrics_Module` (Req 15, Dependency D1). See design.md
- * "Metrics — Metrics_Module" and "Dependency D1".
+ * Metrics entry screen — `Metrics_Module` (Req 15, Dependency D1 resolved). See
+ * design.md "Metrics — Metrics_Module".
  *
- * A grid with columns for student name, words-per-minute, and accuracy. Numeric
- * fields accept only non-negative numeric input (Req 15.2); invalid entries mark
- * the field and disable the row's save. Saving builds a forward-compatible
- * `student_metrics` action per provided metric, enqueued in the `blocked`
- * sub-status because `/sync` has no `student_metrics` entity yet (D1) — no
- * backend change is made here.
+ * A grid with columns for student, words-per-minute, and accuracy. Each row's
+ * student is a **selected registered player** (chosen with the shared
+ * {@link PlayerPicker}, the same search/select control used by Log Session) so
+ * the saved metric can be keyed on `player_id` — the natural key the Container
+ * API's `student_metrics` entity expects (D1, PR #3). Numeric fields accept only
+ * non-negative numeric input (Req 15.2); invalid entries mark the field and
+ * disable the row's save. Saving builds a live `student_metrics` action per
+ * provided metric, enqueued with the normal `unsynced` status so the Sync_Engine
+ * includes it in the next batch and reconciles it like the other capture
+ * entities. The student's display name stays personal data — encrypted at rest
+ * locally (Req 17.1) and never sent on the wire.
  */
 import { useCallback, useState } from 'react';
 import { useServices } from '../state/servicesState';
@@ -17,9 +22,12 @@ import {
   isNonNegativeNumeric,
   type MetricsRowInput,
 } from '../domain/captures/metrics';
+import { PlayerPicker } from './PlayerPicker';
+import type { PlayerChoice } from './useKnownPlayers';
 
 interface GridRow {
   key: string;
+  playerId: string | null;
   studentName: string;
   wpm: string;
   accuracy: string;
@@ -29,7 +37,7 @@ interface GridRow {
 let rowSeq = 0;
 function newRow(): GridRow {
   rowSeq += 1;
-  return { key: `row-${rowSeq}`, studentName: '', wpm: '', accuracy: '', saved: false };
+  return { key: `row-${rowSeq}`, playerId: null, studentName: '', wpm: '', accuracy: '', saved: false };
 }
 
 export function Metrics() {
@@ -40,9 +48,20 @@ export function Metrics() {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch, saved: false } : r)));
   }, []);
 
+  const selectPlayer = useCallback(
+    (key: string, player: PlayerChoice) => {
+      update(key, { playerId: player.id, studentName: player.name });
+    },
+    [update],
+  );
+
   const saveRow = useCallback(
     async (row: GridRow) => {
+      // A registered player must be selected so the metric carries a player_id
+      // (the API's natural key for student_metrics — D1).
+      if (!row.playerId) return;
       const input: MetricsRowInput = {
+        playerId: row.playerId,
         studentName: row.studentName || undefined,
         wpm: row.wpm,
         accuracy: row.accuracy,
@@ -75,16 +94,22 @@ export function Metrics() {
           {rows.map((row) => {
             const wpmValid = row.wpm === '' || isNonNegativeNumeric(row.wpm);
             const accValid = row.accuracy === '' || isNonNegativeNumeric(row.accuracy);
-            const canSave = canSaveMetricsRow({ wpm: row.wpm, accuracy: row.accuracy }) && wpmValid && accValid;
+            const canSave =
+              !!row.playerId &&
+              canSaveMetricsRow({ wpm: row.wpm, accuracy: row.accuracy }) &&
+              wpmValid &&
+              accValid;
             return (
               <tr key={row.key} data-row={row.key}>
                 <td>
-                  <input
-                    type="text"
-                    aria-label={`Student name ${row.key}`}
-                    value={row.studentName}
-                    onChange={(e) => update(row.key, { studentName: e.target.value })}
+                  <PlayerPicker
+                    idSuffix={row.key}
+                    selectedId={row.playerId}
+                    onSelect={(player) => selectPlayer(row.key, player)}
                   />
+                  {row.studentName && (
+                    <span data-selected-student={row.key}>{row.studentName}</span>
+                  )}
                 </td>
                 <td>
                   <input

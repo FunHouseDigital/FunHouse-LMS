@@ -1,13 +1,16 @@
 /**
- * Metrics capture builder — `Metrics_Module` (Req 15, Dependency D1). See
- * design.md "Metrics — Metrics_Module" and "Dependency D1".
+ * Metrics capture builder — `Metrics_Module` (Req 15, Dependency D1 resolved).
+ * See design.md "Metrics — Metrics_Module" and "Dependency D1".
  *
- * Pure builder: given a metrics row (student name + optional wpm/accuracy), it
- * validates that each numeric field is a non-negative number (Property 19) and
- * produces a `student_metrics` record + action per provided metric. Because
- * `student_metrics` is NOT a valid Spec 2 `/sync` entity, its actions are
- * enqueued in the forward-compatible `blocked` sub-status (D1) so they stay
- * queued unchanged until the API adds the entity — no backend change here.
+ * Pure builder: given a metrics row (a selected `playerId` + display name +
+ * optional wpm/accuracy), it validates that each numeric field is a non-negative
+ * number (Property 19) and produces a `student_metrics` record + action per
+ * provided metric. `student_metrics` is now a live `/sync` entity (Container API
+ * PR #3): actions enqueue with the normal `unsynced` status and are included in
+ * the next flush batch, keyed on `player_id` and reconciled like the other
+ * natural-key entities. The display name stays personal data — encrypted at
+ * rest locally and never sent on the wire; only `player_id` identifies the
+ * student in the payload.
  */
 import type { StudentMetricsPayload } from '../types';
 import type { CaptureAction, CaptureContext, CaptureResult } from './types';
@@ -62,10 +65,11 @@ function metricAction(
   const clientId = ctx.newId();
   const payload: StudentMetricsPayload = {
     metric_type: metricType,
-    value,
+    // `measured_at` (device capture time) stabilises the server natural key
+    // (`player_id`/`metric_type`/`measured_at`) so retries stay idempotent.
     measured_at: ctx.now,
+    value,
     ...(row.playerId ? { player_id: row.playerId } : {}),
-    ...(row.studentName ? { player_name: row.studentName } : {}),
   };
   return {
     record: {
@@ -78,12 +82,16 @@ function metricAction(
         metric_type: metricType,
         value,
       },
-      // The student name is personal data → encrypted at rest (Req 17.1).
+      // The student name is personal data → encrypted at rest (Req 17.1); it is
+      // never placed in the sync payload.
       ...(row.studentName ? { personal: { player_name: row.studentName } } : {}),
     },
-    // Forward-compatible: held blocked until the API adds the entity (D1).
+    // D1 resolved: a live synced action. Defaults to the normal `unsynced`
+    // status so the Sync_Engine includes it in the next batch and reconciles it
+    // (applied/skipped/rejected) like session/attendance/payment. When the
+    // referenced player was registered offline, its local id is rewritten to the
+    // server id via the same D2 local-id resolution used by those entities.
     action: {
-      status: 'blocked',
       action: {
         client_id: clientId,
         entity: 'student_metrics',

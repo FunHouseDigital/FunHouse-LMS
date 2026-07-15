@@ -224,6 +224,8 @@ This spec covers the PWA client only. It consumes the endpoints already delivere
 3. WHEN the founder saves a metrics row, THE Metrics_Module SHALL write a `student_metrics` record to the Local_Store and enqueue the corresponding Sync_Action.
 4. WHEN a metrics row is captured offline, THE Metrics_Module SHALL complete the entry without network connectivity.
 
+> **Note (Dependency D1 — RESOLVED, Container API PR #3):** `student_metrics` is now an accepted `/sync` entity keyed on `player_id`/`metric_type`/`measured_at`, so metrics sync **live**: each row references a selected registered player (via the reused player search/select control) and its Sync_Action enqueues as a normal `unsynced` action included in the next flush batch and reconciled like the other capture entities. The student's display name remains personal data, encrypted at rest and not sent on the wire. (The earlier forward-compatible `blocked` hold for metrics no longer applies.)
+
 ### Requirement 16: Operational alerts
 
 **User Story:** As a founder, I want to see deterministic operational alerts, so that I can act on inactivity, expiring entitlements, due payments, and stale devices.

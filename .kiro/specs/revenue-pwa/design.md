@@ -12,7 +12,7 @@ The design binds to these observed contracts (not assumptions):
 
 - **`POST /auth/login`** → request `{identifier, password}`; `200` → `{access_token, token_type: "bearer", expires_at}`; `401` generic on bad credentials; `422` when a field is missing. (`auth/router.py`, `auth/service.py`)
 - **`POST /sync`** → request `{actions: [{client_id, entity, created_at, payload}]}`; `200` → `{results: [{client_id, entity, status, record_id, reason}]}` where `status ∈ {applied, skipped, rejected}`. The batch always returns `200` even when individual actions are `rejected` (per-action isolation). (`sync/router.py`, `sync/service.py`)
-- **Sync `entity` values** = `player | consent | session | attendance | payment | entitlement` (`sync/mapping.py` `VALID_ENTITIES`). **`student_metrics` is NOT a valid sync entity** — see [Dependency D1](#dependency-d1-student_metrics-sync-entity).
+- **Sync `entity` values** = `player | consent | session | attendance | payment | entitlement | student_metrics` (`sync/mapping.py` `VALID_ENTITIES`). **`student_metrics` is now an accepted sync entity** (Container API PR #3 — [Dependency D1](#dependency-d1-student_metrics-sync-entity) resolved); it is a natural-key entity keyed on `player_id`/`metric_type`/`measured_at`.
 - **Idempotency keys** (server-side, per `sync/mapping.py`):
   - `player` → dedup key over name/birth_date
   - `session` → natural key over `(player_id, session_type, started_at, ended_at)`; `duration_minutes` is a mutable/LWW value field
@@ -209,7 +209,7 @@ One store per captured entity so local reads (Today totals, player detail, offli
 - `entitlements` — keyPath `local_id`; index `by_player`, `by_client_id`
 - `consents` — keyPath `local_id`; index `by_player`
 - `attendance` — keyPath `local_id`; index `by_session`, `by_player`
-- `student_metrics` — keyPath `local_id`; index `by_day` (queued forward-compatibly, see [D1](#dependency-d1-student_metrics-sync-entity))
+- `student_metrics` — keyPath `local_id`; index `by_day` (synced live, keyed on `player_id`; see [D1](#dependency-d1-student_metrics-sync-entity) — resolved)
 
 Each personal-data-bearing record stores its sensitive fields as an **encrypted blob** (see [POPIA](#popia-on-device-protection-req-17)); non-sensitive index keys (e.g. `by_day`, `client_id`) are stored in clear so indexing still works.
 
@@ -354,7 +354,8 @@ Each capture service is a pure function `buildActions(input, context) → { reco
 ### Metrics — `Metrics_Module` (Req 15)
 
 - Grid: student name, words-per-minute, accuracy (15.1); accept only non-negative numeric input for wpm/accuracy (15.2).
-- On save (15.3): write a `student_metrics` record and enqueue a Sync_Action for it. **Because `/sync` has no `student_metrics` entity ([D1](#dependency-d1-student_metrics-sync-entity)), the client queues it in a forward-compatible shape** (`entity: "student_metrics"`, payload `{player_name|player_id, metric_type, value, measured_at}` matching the pipeline's `student_metrics` fields and allowed `metric_type`s `typing_wpm`/`typing_accuracy`). Offline-capable (15.4). Until the API adds the entity, these actions remain queued (the Sync_Engine skips unknown-entity actions from batches or, if sent, the server would `reject` with `unknown_entity`; the client holds them as a distinct `blocked` sub-status to avoid noisy rejections).
+- Each row's student is a **selected registered player** (chosen with the shared player search/select control reused from Log Session), so the saved metric carries a `player_id`.
+- On save (15.3): write a `student_metrics` record and enqueue a Sync_Action for it. **`/sync` now accepts the `student_metrics` entity ([D1](#dependency-d1-student_metrics-sync-entity) resolved, Container API PR #3)**, so the action enqueues with the normal `unsynced` status (`entity: "student_metrics"`, payload `{player_id, metric_type: 'typing_wpm'|'typing_accuracy', value, measured_at}`) and the Sync_Engine includes it in the next flush batch, reconciling it (applied/skipped/rejected) like the other natural-key entities. The entity is keyed server-side on `player_id`/`metric_type`/`measured_at` (the server sets `logged_by`/`location` and stores `value` as TEXT); a metric captured for an offline-registered player gets the same Dependency-D2 local-id rewrite session/payment get. Offline-capable (15.4). The student's display name stays personal data — encrypted at rest locally (Req 17.1) and never sent on the wire.
 
 ## Read views (Req 13, 16)
 
@@ -391,7 +392,7 @@ TypeScript types the client uses. Payload types match the API contract exactly.
 // ---- Sync primitives (match sync/router.py SyncActionModel / SyncResultModel) ----
 type EntityType =
   | 'player' | 'consent' | 'session' | 'attendance' | 'payment' | 'entitlement'
-  | 'student_metrics'; // forward-compatible only; NOT accepted by Spec 2 /sync (D1)
+  | 'student_metrics'; // live entity, keyed on player_id/metric_type/measured_at (D1 resolved)
 
 type SyncStatus = 'unsynced' | 'applied' | 'skipped' | 'rejected' | 'blocked';
 
@@ -446,8 +447,8 @@ interface PaymentPayload {
 }
 interface EntitlementCreatePayload { player_id: string; product_id: string; }
 interface EntitlementDrawPayload { entitlement_id: string; amount: number; } // minutes
-interface StudentMetricsPayload {  // forward-compatible (D1)
-  player_id?: string; player_name?: string;
+interface StudentMetricsPayload {  // live entity (D1 resolved); natural key = player_id/metric_type/measured_at
+  player_id?: string;              // display name is personal → encrypted at rest, never sent
   metric_type: 'typing_wpm' | 'typing_accuracy';
   value: number; measured_at: string;
 }
@@ -504,7 +505,7 @@ interface EncryptedField { iv: string; ciphertext: string; } // base64
 | `entitlements` | `local_id` | `by_player`, `by_client_id` | — |
 | `consents` | `local_id` | `by_player` | consent metadata |
 | `attendance` | `local_id` | `by_session`, `by_player` | — |
-| `student_metrics` | `local_id` | `by_day` | student name |
+| `student_metrics` | `local_id` | `by_day` | student name (synced by `player_id`, D1 resolved) |
 | `cached_reads` | `key` | — | personal fields in cached rosters |
 | `entitlement_balances` | `player_id` | — | — |
 | `meta` | `key` | — | `session` |
@@ -662,7 +663,7 @@ The following properties are derived from the prework analysis and target the pu
 | Submitted action with no matching result | Treat as still unsynced; retry | 5.3 |
 | Oversell / negative / zero-on-empty draw | Entitlement_Calculator blocks selection before enqueue | 8.4, 8.6 |
 | Offline read with no cache yet | Show empty/first-run state with offline indicator | 9.5, 13.5, 16.3 |
-| `student_metrics` action (no API entity) | Hold as `blocked` sub-status; do not spam rejections; flush when entity exists | D1 |
+| `student_metrics` action | Enqueue `unsynced` and flush live keyed on `player_id`; reconcile like other entities (D1 resolved, API PR #3) | D1 |
 | IndexedDB write failure | Surface error, do not confirm capture success (write-before-confirm invariant) | 4.1 |
 | Decrypt failure (missing/expired key) | Withhold personal data; require re-auth | 17.2, 17.3 |
 | Non-HTTPS API base URL | Reject at client init | 17.4 |
@@ -707,13 +708,13 @@ Primary targets:
 
 ## Dependencies and Assumptions
 
-### Dependency D1: `student_metrics` sync entity
+### Dependency D1: `student_metrics` sync entity — RESOLVED
 
-The Spec 2 `POST /sync` `VALID_ENTITIES` set (`sync/mapping.py`) is `{player, consent, session, attendance, payment, entitlement}` and does **not** include `student_metrics`. A `student_metrics` table and allowed `metric_type`s (`typing_wpm`, `typing_accuracy`, …) exist in the ingestion pipeline (`funhouse_pipeline`), but there is **no API entity to sync device-captured metrics**. 
+**Status: resolved** (Container API PR #3). The `POST /sync` `VALID_ENTITIES` set (`sync/mapping.py`) now includes `student_metrics` alongside `{player, consent, session, attendance, payment, entitlement}`. The entity is a **natural-key** entity keyed on `player_id`/`metric_type`/`measured_at`; the server sets `logged_by`/`location` and stores `value` as TEXT (coercing the numeric value). Allowed `metric_type`s are `typing_wpm` and `typing_accuracy`.
 
-**Impact**: Metrics captured in the PWA (Req 15) can be persisted locally but cannot be synced until the API adds a `student_metrics` sync entity. 
+**Client resolution**: metrics are now captured against a **selected registered player** and enqueued as normal `unsynced` `student_metrics` actions (payload `{player_id, metric_type, value, measured_at}`). The Sync_Engine includes them in the next flush batch and reconciles them (applied/skipped/rejected) like the other capture entities. A metric captured for an offline-registered player is ordered after the `player` action and gets the same [Dependency D2](#dependency-d2-local-id-resolution) local-id rewrite as session/payment. The student's display name remains personal data — encrypted at rest locally (Req 17.1) and never transmitted.
 
-**Client design**: capture and queue metrics in a **forward-compatible** shape (`entity: "student_metrics"`, payload matching the pipeline's `student_metrics` fields). These actions are held in a `blocked` sub-status and are **not** sent (a send would return `rejected: unknown_entity`). When the API adds the entity, the queued actions flush unchanged. This is flagged as a required backend dependency, not implemented in this client spec.
+_Historical note_: before PR #3 the client queued metrics in a forward-compatible `blocked` sub-status (excluded from batches) so they would flush unchanged once the entity existed. That hold is no longer used for metrics; the `blocked` mechanism is retained generically for any future not-yet-accepted entity.
 
 ### Dependency D2: Local-id resolution for dependent actions
 

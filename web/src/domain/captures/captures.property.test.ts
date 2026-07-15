@@ -56,6 +56,9 @@ function assertRequiredPayload(entity: string, payload: Record<string, unknown>)
       expect(payload.present).toBe(true);
       break;
     case 'student_metrics':
+      // D1 resolved: metrics sync live keyed on the natural key
+      // (player_id / metric_type / measured_at).
+      expect(payload.player_id).toBeDefined();
       expect(payload.metric_type).toBeDefined();
       expect(typeof payload.value).toBe('number');
       expect(payload.measured_at).toBeDefined();
@@ -156,6 +159,7 @@ const attendanceDesc = fc
 
 const metricsDesc = fc
   .record({
+    playerId: fc.uuid(),
     studentName: fc.string({ maxLength: 8 }),
     wpm: fc.integer({ min: 0, max: 200 }),
     accuracy: fc.option(fc.integer({ min: 0, max: 100 }), { nil: undefined }),
@@ -163,7 +167,12 @@ const metricsDesc = fc
   .map((d) => ({
     kind: 'metrics' as const,
     build: (ctx: CaptureContext): CaptureResult => {
-      const input: MetricsRowInput = { studentName: d.studentName, wpm: d.wpm, accuracy: d.accuracy };
+      const input: MetricsRowInput = {
+        playerId: d.playerId,
+        studentName: d.studentName,
+        wpm: d.wpm,
+        accuracy: d.accuracy,
+      };
       return buildMetricsActions(input, ctx);
     },
   }));

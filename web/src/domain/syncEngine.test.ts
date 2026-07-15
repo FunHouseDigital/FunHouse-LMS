@@ -91,24 +91,58 @@ describe('Sync_Engine — integration capture→queue→sync→reconcile (task 8
     expect(await getLastSuccessfulSync()).toBeNull();
   });
 
-  it('excludes blocked (student_metrics) actions from the batch (D1)', async () => {
-    await enqueueAction(
-      { client_id: 'm1', entity: 'student_metrics', created_at: '2024-01-01T10:00:00.000Z', payload: { metric_type: 'typing_wpm', value: 42, measured_at: '2024-01-01' } },
-      { status: 'blocked' },
-    );
-    await enqueueAction({ client_id: 's1', entity: 'session', created_at: '2024-01-01T10:00:00.000Z', payload: {} });
+  it('includes live student_metrics actions in the batch and reconciles them (D1 resolved)', async () => {
+    // D1 resolved: student_metrics is now a live /sync entity keyed on player_id.
+    // Metrics enqueue as normal `unsynced` actions and must be transmitted and
+    // reconciled like the other natural-key entities.
+    await enqueueAction({ client_id: 'm1', entity: 'student_metrics', created_at: '2024-01-01T10:00:00.000Z', payload: { player_id: 'srv-1', metric_type: 'typing_wpm', value: 42, measured_at: '2024-01-01T10:00:00.000Z' } });
+    await enqueueAction({ client_id: 's1', entity: 'session', created_at: '2024-01-01T10:00:00.000Z', payload: { player_id: 'srv-1' } });
 
     const mock = makeMock((batch) => ({
       results: batch.map<ActionResult>((a) => ({ client_id: a.client_id, entity: a.entity, status: 'applied', record_id: null, reason: null })),
     }));
     const engine = new SyncEngine({ client: mock.client });
-    await engine.flush();
+    const result = await engine.flush();
 
-    // The blocked metrics action was never transmitted and is still blocked.
+    // The metrics action was transmitted alongside the session action...
     const sentIds = mock.batches.flat().map((a) => a.client_id);
-    expect(sentIds).not.toContain('m1');
+    expect(sentIds).toContain('m1');
     expect(sentIds).toContain('s1');
-    expect((await getAction('m1'))!.status).toBe('blocked');
+    // ...carried its player_id natural key on the wire...
+    const sentMetric = mock.batches.flat().find((a) => a.client_id === 'm1')!;
+    expect((sentMetric.payload as { player_id: string }).player_id).toBe('srv-1');
+    // ...and was reconciled applied like any other entity.
+    expect(result.applied).toBe(2);
+    expect((await getAction('m1'))!.status).toBe('applied');
+    expect(await countUnsynced()).toBe(0);
+  });
+
+  it('resolves a metrics action captured for an offline-registered player (D2)', async () => {
+    // A player registered offline; a metric captured for that local player id
+    // must get the same D2 local-id rewrite session/payment get, ordered after
+    // the player action.
+    await enqueueAction({ client_id: 'PLAYER', entity: 'player', created_at: '2024-01-01T09:00:00.000Z', payload: { first_name: 'Zia' } });
+    await enqueueAction({ client_id: 'METRIC', entity: 'student_metrics', created_at: '2024-01-01T09:00:05.000Z', payload: { player_id: 'PLAYER', metric_type: 'typing_accuracy', value: 96, measured_at: '2024-01-01T09:00:05.000Z' } });
+
+    const mock = makeMock((batch) => ({
+      results: batch.map<ActionResult>((a) => ({
+        client_id: a.client_id,
+        entity: a.entity,
+        status: 'applied',
+        record_id: a.entity === 'player' ? 'SERVER-PLAYER-9' : `srv-${a.client_id}`,
+        reason: null,
+      })),
+    }));
+    const engine = new SyncEngine({ client: mock.client });
+    const result = await engine.flush();
+    expect(result.outcome).toBe('ok');
+
+    // Phase 1 sent the player; phase 2 sent the metric with the resolved id.
+    expect(mock.batches[0].map((a) => a.client_id)).toEqual(['PLAYER']);
+    const phase2 = mock.batches[1];
+    expect(phase2.map((a) => a.client_id)).toEqual(['METRIC']);
+    expect((phase2[0].payload as { player_id: string }).player_id).toBe('SERVER-PLAYER-9');
+    expect(await countUnsynced()).toBe(0);
   });
 });
 

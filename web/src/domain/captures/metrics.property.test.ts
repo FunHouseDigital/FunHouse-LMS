@@ -61,14 +61,24 @@ describe('Metrics numeric input (Property 19)', () => {
         fc.oneof(fc.integer({ min: -50, max: 200 }), fc.constant(''), fc.string({ maxLength: 4 })),
         fc.oneof(fc.integer({ min: -50, max: 200 }), fc.constant(''), fc.string({ maxLength: 4 })),
         (wpm, accuracy) => {
-          const { actions } = buildMetricsActions({ studentName: 'S', wpm, accuracy }, ctx());
+          const { actions } = buildMetricsActions(
+            { playerId: 'player-1', studentName: 'S', wpm, accuracy },
+            ctx(),
+          );
           const expectedCount =
             (isNonNegativeNumeric(wpm) ? 1 : 0) + (isNonNegativeNumeric(accuracy) ? 1 : 0);
           expect(actions).toHaveLength(expectedCount);
-          // All metric actions are held forward-compatibly (blocked, D1).
+          // D1 resolved: metrics now enqueue as normal live synced actions
+          // (no `blocked` sub-status) keyed on player_id, so the Sync_Engine
+          // includes them in the next flush batch.
           for (const a of actions) {
             expect(a.action.entity).toBe('student_metrics');
-            expect(a.status).toBe('blocked');
+            expect(a.status).toBeUndefined(); // defaults to `unsynced` at enqueue
+            const payload = a.action.payload as Record<string, unknown>;
+            expect(payload.player_id).toBe('player-1');
+            expect(payload.measured_at).toBeDefined();
+            // The personal display name is never sent on the wire.
+            expect(payload.player_name).toBeUndefined();
           }
           return true;
         },
