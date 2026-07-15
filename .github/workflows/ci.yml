@@ -1,0 +1,144 @@
+name: CI
+
+# Free-tier GitHub Actions CI. No AWS credentials, no `terraform apply`, no
+# remote backend — every job runs entirely offline against committed fixtures
+# and ephemeral services. This is CI tooling (PRD §3.1), not runtime infra.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # infra-gates: offline Terraform + shell assertions (no AWS, no backend).
+  # ---------------------------------------------------------------------------
+  infra-gates:
+    name: infra-gates (terraform fmt/validate + assertion scripts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck + jq
+        run: sudo apt-get update && sudo apt-get install -y shellcheck jq
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+          terraform_wrapper: false
+
+      - name: terraform fmt -check -recursive
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend) + validate
+        working-directory: infra
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: shellcheck assertion scripts
+        working-directory: infra
+        run: |
+          shellcheck scripts/assert_residency.sh
+          shellcheck scripts/assert_no_forbidden.sh
+
+      - name: Residency + forbidden-service gates vs committed fixtures
+        working-directory: infra
+        run: |
+          set -eu
+          # Passing fixture MUST be accepted (exit 0).
+          sh scripts/assert_residency.sh    scripts/fixtures/plan_pass.json
+          sh scripts/assert_no_forbidden.sh scripts/fixtures/plan_pass.json
+
+          # Failing fixture MUST be rejected (non-zero). Invert so the job
+          # passes only when the bad plan is correctly caught.
+          if ! sh scripts/assert_residency.sh scripts/fixtures/plan_fail.json; then
+            echo "OK: residency gate correctly rejected the failing fixture"
+          else
+            echo "ERROR: residency gate accepted a plan it should have rejected" >&2
+            exit 1
+          fi
+
+          if ! sh scripts/assert_no_forbidden.sh scripts/fixtures/plan_fail.json; then
+            echo "OK: no-forbidden gate correctly rejected the failing fixture"
+          else
+            echo "ERROR: no-forbidden gate accepted a plan it should have rejected" >&2
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # python-tests: full pipeline + API pytest suite against a real PostgreSQL.
+  # The DB-backed / property tests actually EXECUTE here (they only skip when
+  # no server is reachable), so a live service is provided.
+  # ---------------------------------------------------------------------------
+  python-tests:
+    name: python-tests (pytest w/ PostgreSQL)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: funhouse
+          POSTGRES_PASSWORD: funhouse
+          POSTGRES_DB: funhouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U funhouse"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # These names match funhouse_pipeline.config.settings (read by the
+      # tests/conftest.py db_connection fixture via load_config().database.dsn()).
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: funhouse
+      DB_USER: funhouse
+      DB_PASSWORD: funhouse
+      DB_SSLMODE: disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run pytest (full suite, DB-backed tests execute)
+        run: pytest
+
+  # ---------------------------------------------------------------------------
+  # web-tests: offline-first Revenue PWA (React/Vite) — test + production build.
+  # ---------------------------------------------------------------------------
+  web-tests:
+    name: web-tests (npm test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run web unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
