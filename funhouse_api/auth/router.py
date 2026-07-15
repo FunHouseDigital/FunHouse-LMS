@@ -54,13 +54,16 @@ def _lookup_user(conn: Any, identifier: str) -> tuple[AuthUser, str | None] | No
     """Return ``(user, password_hash)`` for a matching row, or ``None``.
 
     Matches ``identifier`` against ``users.name`` or ``users.email``. The
-    ``users`` table carries no ``school_id`` column, so ``school_id`` is left as
-    ``None`` on the issued identity.
+    facilitator's assigned school is sourced from ``users.school_id`` (added by
+    migration ``004_users_school_id.sql``) and carried onto the issued identity
+    so ``issue_token`` populates the ``school_id`` claim (Req 1.8, 3.3). For a
+    facilitator this is their school; for founders/managers the column is
+    ``NULL`` and the claim stays null.
     """
     with conn.cursor() as cursor:
         cursor.execute(
             """
-            SELECT id, role, location_id, password_hash
+            SELECT id, role, location_id, school_id, password_hash
             FROM users
             WHERE name = %s OR email = %s
             LIMIT 1
@@ -72,12 +75,12 @@ def _lookup_user(conn: Any, identifier: str) -> tuple[AuthUser, str | None] | No
     if row is None:
         return None
 
-    user_id, role, location_id, password_hash = row
+    user_id, role, location_id, school_id, password_hash = row
     user = AuthUser(
         id=str(user_id),
         role=role,
         location_id=None if location_id is None else str(location_id),
-        school_id=None,
+        school_id=None if school_id is None else str(school_id),
     )
     return user, password_hash
 

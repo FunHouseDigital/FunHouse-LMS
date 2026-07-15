@@ -81,8 +81,10 @@ class AuthUser:
     """The minimal user identity ``issue_token`` needs.
 
     Built from a ``users`` row at login. ``school_id`` is carried through the
-    token model for facilitator scope; it defaults to ``None`` because the
-    Phase 0 ``users`` table does not carry a ``school_id`` column (see login).
+    token model for facilitator scope; the login path sources it from the
+    ``users.school_id`` column (migration ``004_users_school_id.sql``). It is a
+    facilitator's assigned school and ``None`` for founders/managers (Req 1.8,
+    3.3).
     """
 
     id: str

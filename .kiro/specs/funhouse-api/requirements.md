@@ -20,7 +20,7 @@ This spec covers the API layer only. The PWA frontend (service worker, IndexedDB
 - **Role**: One of `founder`, `manager`, or `facilitator`, stored in `users.role`, determining data-access scope.
 - **Founder**: A user with role `founder` (e.g. Aya) who is authorized to access data across all locations and schools.
 - **Manager**: A user with role `manager` (e.g. Loyiso) who is authorized to access data for the lounge location assigned to that user only.
-- **Facilitator**: A user with role `facilitator` who is authorized to access data for the school assigned to that user only.
+- **Facilitator**: A user with role `facilitator` who is authorized to access data for the school assigned to that user only. A facilitator's assigned school is stored as `users.school_id` on that user's record and is the source of the `school_id` JWT claim.
 - **Scope**: The set of records a caller may access, expressed as a `location_id` and, for facilitators, a `school_id`.
 - **Sync_Service**: The FunHouse_API component that accepts a batch of offline-created records and applies them server-side.
 - **Sync_Batch**: A request payload containing an ordered queue of Sync_Actions submitted by one device in a single sync attempt.
@@ -55,6 +55,7 @@ This spec covers the API layer only. The PWA frontend (service worker, IndexedDB
 5. WHEN the Auth_Service issues a JWT, THE Auth_Service SHALL include an expiry claim set to a configured lifetime.
 6. WHEN a new user password is stored, THE Auth_Service SHALL hash the password with bcrypt before persisting it to `users.password_hash` and SHALL persist only the hash.
 7. IF a login request omits the identifier or the password, THEN THE Auth_Service SHALL reject the request with a validation-error response.
+8. WHEN the Auth_Service issues a JWT for a facilitator, THE Auth_Service SHALL populate the `school_id` claim from that user's assigned school stored on the user's `users` row. (A facilitator user has an assigned `school_id`; founders and managers have no assigned school and the claim is null for them.)
 
 ### Requirement 2: Token Verification and Session Expiry
 
@@ -78,7 +79,7 @@ This spec covers the API layer only. The PWA frontend (service worker, IndexedDB
 
 1. WHEN a request from a founder is authorized, THE RBAC_Enforcer SHALL grant access to records across all locations and all schools.
 2. WHEN a request from a manager is authorized, THE RBAC_Enforcer SHALL restrict access to records whose `location_id` equals the manager's assigned location.
-3. WHEN a request from a facilitator is authorized, THE RBAC_Enforcer SHALL restrict access to records whose `location_id` equals the facilitator's assigned location AND whose `school_id` equals the facilitator's assigned school.
+3. WHEN a request from a facilitator is authorized, THE RBAC_Enforcer SHALL restrict access to records whose `location_id` equals the facilitator's assigned location AND whose `school_id` equals the facilitator's assigned school, where that assigned `school_id` originates from the facilitator's `users` record and is carried on the `school_id` JWT claim.
 4. WHEN a collection read is authorized, THE RBAC_Enforcer SHALL exclude records outside the caller's scope from the response.
 5. IF a request attempts to write a record outside the caller's scope, THEN THE RBAC_Enforcer SHALL reject the write with an authorization-failure response and SHALL NOT persist the write.
 6. WHEN the RBAC_Enforcer authorizes a read query, THE RBAC_Enforcer SHALL constrain the query by `location_id` and, for facilitators, additionally by `school_id`.

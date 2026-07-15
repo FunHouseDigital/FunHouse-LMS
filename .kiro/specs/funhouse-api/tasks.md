@@ -244,6 +244,18 @@ Scope is strictly the API layer. No PWA frontend, no lesson generation, no SMS.
 - [x] 16. Final checkpoint — run the full suite
   - Ensure all tests pass, ask the user if questions arise.
 
+- [x] 18. Facilitator school scope at login
+  - Close the end-to-end gap: facilitator scope needs `school_id` (Req 3.3) and the RBAC_Enforcer already consumes the `school_id` claim, but the `users` table has no `school_id` for `Auth_Service.issue_token` to source. Wire it with an additive migration + login selection. RBAC is unchanged.
+  - [x] 18.1 Additive migration `funhouse_pipeline/sql/004_users_school_id.sql`
+    - `ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id)` — nullable (founders/managers stay NULL), idempotent, no data loss; auto-discovered by the `sql/` lexical glob after `003`; 14-table count unchanged
+    - _Requirements: 1.8, 3.3_ (Design: Data Models → Required additive migration 004_users_school_id.sql)
+  - [x] 18.2 Source `school_id` into the JWT at login
+    - In the login path (`funhouse_api/auth/router.py`), select `users.school_id` alongside `role`/`location_id` and pass it into `issue_token` so the `school_id` claim is populated from the user row (facilitator → their school; others → NULL). RBAC (`funhouse_api/rbac.py`) is unchanged — it already consumes the claim
+    - _Requirements: 1.1, 1.8, 3.3_ (Design: Components → Auth_Service; Login endpoint)
+  - [x]* 18.3 Tests for the facilitator school scope at login
+    - Migration idempotency + `users.school_id` column-present assertion (re-run safe); an auth test that a facilitator user with an assigned `school_id` gets a JWT whose decoded `school_id` claim equals that school (mirrors Property 1); an RBAC test that a facilitator principal built from that token is scoped to the school
+    - _Requirements: 1.8, 3.3, 15.2_
+
 ## Notes
 
 - Tasks marked with `*` are optional test sub-tasks (property-based, example, integration, smoke). Property tests use Hypothesis at min 100 iterations and are tagged `Feature: funhouse-api, Property N: <text>`.
