@@ -51,10 +51,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["funhouse_pipeline", "funhouse_api"]
-
-# Ensure the .sql migration files ship with the package.
-[tool.hatch.build.targets.wheel.force-include]
-"funhouse_pipeline/sql" = "funhouse_pipeline/sql"
+# NOTE: the .sql migration files under funhouse_pipeline/sql/ ship automatically
+# because hatchling includes every non-ignored file inside the packaged
+# directories above. A previous `force-include` of "funhouse_pipeline/sql" was
+# removed: it re-added those already-included files and made `pip install .`
+# fail with "A second file is being added to the wheel archive at the same
+# path" (breaking the container build).
 
 [tool.pytest.ini_options]
 minversion = "8.0"

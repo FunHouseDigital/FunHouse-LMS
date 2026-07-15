@@ -1,0 +1,51 @@
+# Build context is the repo root (docker build -f funhouse_api/Dockerfile .).
+# Keep the image slim and the context small: only pyproject.toml, README.md,
+# funhouse_api/, and funhouse_pipeline/ are needed to build the wheel.
+
+# Version control / tooling metadata
+.git
+.gitignore
+.github
+
+# Spec / agent / editor workspaces
+.kiro
+.agents
+
+# Not part of the API image
+web/
+infra/
+tests/
+docs/
+
+# Virtualenvs and caches
+.venv
+venv
+env
+ENV
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache
+.hypothesis
+.mypy_cache
+.ruff_cache
+node_modules
+
+# Pipeline run state
+.pipeline-state/
+
+# Packaging / build artifacts
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+
+# Local secrets / infra tfvars (never in an image)
+*.secrets.tfvars
+*.secret.tfvars
+
+# Markdown docs are not needed in the build context, EXCEPT README.md which the
+# hatchling build backend requires (readme = "README.md" in pyproject.toml).
+*.md
+!README.md
