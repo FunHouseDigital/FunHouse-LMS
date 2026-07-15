@@ -63,3 +63,21 @@ Thumbs.db
 # ---------------------------------------------------------------------------
 # NOTE: uv.lock and pyproject.toml are intentionally NOT ignored — commit them.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Terraform (infra/) — never commit state, provider plugins, or secret tfvars
+# ---------------------------------------------------------------------------
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+# Secret var files (db credentials, jwt secret) — supplied out-of-band (Req 5.2)
+*.secrets.tfvars
+*.secret.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
