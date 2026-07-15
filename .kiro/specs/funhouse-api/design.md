@@ -102,7 +102,7 @@ Responsible for password verification and JWT lifecycle.
     "location_id": "<uuid|null>", "school_id": "<uuid|null>",
     "iat": <epoch>, "exp": <iat + JWT_TTL_SECONDS> }
   ```
-  (Req 1.1, 1.5, 14.5). Token lifetime `JWT_TTL_SECONDS` is configurable (default e.g. 8h).
+  (Req 1.1, 1.5, 14.5). Token lifetime `JWT_TTL_SECONDS` is configurable (default e.g. 8h). The `school_id` claim is sourced from the user's `users.school_id` column (added by migration `004_users_school_id.sql`): for a facilitator it is their assigned school; for founders/managers it is `NULL` (Req 1.8, 3.3). The login path selects `users.school_id` alongside `role`/`location_id` and passes it into `issue_token`.
 - `decode_token(token: str, *, now: datetime) -> Claims` — verifies signature and `exp`; raises `AuthError` on missing/invalid/expired (Req 2.1–2.4, 2.7).
 
 **Login endpoint** `POST /auth/login` (public, Req 2.5): accepts `{identifier, password}`; 422 if either is missing (Req 1.7); 401 if the identifier matches no `users` row (Req 1.3) or the password fails bcrypt (Req 1.4); otherwise 200 with the JWT (Req 1.1).
@@ -210,6 +210,17 @@ ALTER TABLE users ADD CONSTRAINT users_role_check
 ```
 
 No columns are added: the digital signature (Req 8.3), sync idempotency (Req 4.2), and device tracking (Req 12.5) all reuse existing columns (`sync_log.user_id`/`server_timestamp`, `natural_key`/`dedup_key`/`client_id`, `sync_log.device_id`). The recurring-reset period is tracked by reusing `entitlements.valid_from` (see Entitlement_Engine).
+
+### Required additive migration (strictly necessary): `004_users_school_id.sql`
+
+Facilitator scope is defined by `location_id` **AND** `school_id` (Req 3.3), and the RBAC_Enforcer already filters/asserts on the `school_id` JWT claim. But the Phase 0 `users` table carries only `role` and `location_id` — it has **no `school_id` column** — so `Auth_Service.issue_token` has no source for a facilitator's school, and facilitator school-scoping is not wired end to end (Req 1.8, 3.3). This migration closes that gap. Like `003`, it is purely additive/idempotent and adds no table:
+
+```sql
+-- Feature: funhouse-api, additive facilitator school scope (Req 1.8, 3.3).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id);
+```
+
+The column is **nullable** so founders and managers stay `NULL` (they have no assigned school); a facilitator's row carries their assigned school. `ADD COLUMN IF NOT EXISTS` makes re-running safe and causes no data loss. The migration runner auto-discovers it via the `sql/` lexical glob (`migration_files()`), applying after `003`. The expected-table count is unchanged (still 14 tables); only one nullable column is added. `users` is **not** added to `SCHOOL_ASSOCIATED_TABLES` (that set governs school-scoped *resource* queries in `001_schema.sql`; `users` is a staff table, and its `school_id` is the source of the caller's scope, not a resource scoped by it).
 
 ### Pydantic DTOs (request/response)
 
