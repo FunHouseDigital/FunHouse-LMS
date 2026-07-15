@@ -1,0 +1,53 @@
+{
+  "pbtResults": {
+    "3.2 Write property test for Local_Store persistence round-trip": {
+      "status": "passed",
+      "lastRunTimestamp": 1784067724683
+    },
+    "4.2 Write property test for encryption round-trip": {
+      "status": "passed",
+      "lastRunTimestamp": 1784067725729
+    },
+    "7.2 Write property test for role-gated navigation": {
+      "status": "passed",
+      "lastRunTimestamp": 1784068264089
+    },
+    "11.4 Write property test for roster search": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069804885
+    },
+    "11.5 Write property test for player-detail merge": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069807389
+    },
+    "11.7 Write property test for registration validation": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069811232
+    },
+    "11.8 Write property test for restricted personal fields": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069816155
+    },
+    "11.10 Write property test for Today totals": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069820348
+    },
+    "11.12 Write property test for subscription membership cap": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069823960
+    },
+    "11.15 Write property test for metrics numeric input": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069826431
+    },
+    "11.16 Write property test for capture action identity across all builders": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069829841
+    },
+    "11.17 Write property test for offline capture performing no network call": {
+      "status": "passed",
+      "lastRunTimestamp": 1784069833223
+    }
+  },
+  "executionHistory": {}
+}
