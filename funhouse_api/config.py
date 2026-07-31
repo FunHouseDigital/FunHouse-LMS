@@ -62,6 +62,7 @@ class ApiConfig:
     jwt_ttl_seconds: int = DEFAULT_JWT_TTL_SECONDS
     alert_expiry_horizon_days: int = DEFAULT_ALERT_EXPIRY_HORIZON_DAYS
     tls_required: bool = False
+    cors_origins: tuple[str, ...] = ()
     location_timezone: str = DEFAULT_LOCATION_TIMEZONE
 
     def dsn(self) -> str:
@@ -101,6 +102,11 @@ def load_api_config(
         default=DEFAULT_ALERT_EXPIRY_HORIZON_DAYS,
     )
     tls_required = _coerce_bool(env.get("TLS_REQUIRED"))
+    cors_origins = tuple(
+        origin.strip()
+        for origin in env.get("FUNHOUSE_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    )
     location_timezone = env.get("LOCATION_TIMEZONE") or DEFAULT_LOCATION_TIMEZONE
 
     return ApiConfig(
@@ -109,5 +115,6 @@ def load_api_config(
         jwt_ttl_seconds=jwt_ttl_seconds,
         alert_expiry_horizon_days=alert_expiry_horizon_days,
         tls_required=tls_required,
+        cors_origins=cors_origins,
         location_timezone=location_timezone,
     )

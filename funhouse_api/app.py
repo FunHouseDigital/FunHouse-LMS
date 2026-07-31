@@ -13,6 +13,7 @@ run against a disposable schema.
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from funhouse_api import health
 from funhouse_api.alerts import router as alerts_router
@@ -49,7 +50,17 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
         ),
     )
 
-    app.state.config = config if config is not None else load_api_config()
+    resolved_config = config if config is not None else load_api_config()
+    app.state.config = resolved_config
+
+    if resolved_config.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(resolved_config.cors_origins),
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
 
     # TLS backstop: reject non-HTTPS requests when the deployment requires TLS
     # (Req 14.3, 14.7). No-op when tls_required is false (local/dev, tests).
