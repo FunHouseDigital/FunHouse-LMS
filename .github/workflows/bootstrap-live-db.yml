@@ -86,51 +86,60 @@ jobs:
           echo "${SUPABASE_CA_SHA256}  ${certificate}" | sha256sum --check --strict
           chmod 600 "$certificate"
 
-      - name: Validate protected connection settings
+      - name: Normalize and validate protected connection settings
         env:
-          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          RAW_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
-          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          RAW_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
         run: |
-          set -euo pipefail
-          missing=0
-          for name in DB_HOST DB_USER DB_PASSWORD BOOTSTRAP_USER_PASSWORD; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Required production setting for ${name} is missing."
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
-          case "$DB_HOST" in
-            *.pooler.supabase.com) ;;
-            *)
-              echo "::error::SUPABASE_DB_HOST must be the Supabase session-pooler host."
-              exit 1
-              ;;
-          esac
-          if [ "$DB_PORT" != "5432" ]; then
-            echo "::error::Use session-pooler port 5432 for migrations."
-            exit 1
-          fi
-          case "$DB_USER" in
-            postgres.*) ;;
-            *)
-              echo "::error::SUPABASE_DB_USER must be the pooler username shown by Supabase Connect."
-              exit 1
-              ;;
-          esac
+          python - <<'PY'
+          import os
+          import re
+
+          required = {
+              "SUPABASE_DB_HOST": os.environ.get("RAW_DB_HOST", ""),
+              "SUPABASE_DB_USER": os.environ.get("RAW_DB_USER", ""),
+              "SUPABASE_DB_PASSWORD": os.environ.get("DB_PASSWORD", ""),
+              "BOOTSTRAP_USER_PASSWORD": os.environ.get("BOOTSTRAP_USER_PASSWORD", ""),
+          }
+          missing = [name for name, value in required.items() if not value]
+          if missing:
+              raise SystemExit(
+                  "Required production settings are missing: " + ", ".join(missing)
+              )
+
+          # GitHub secret text areas can retain an accidental leading/trailing
+          # newline. Normalize identifiers only; password whitespace is significant.
+          host = required["SUPABASE_DB_HOST"].strip()
+          user = required["SUPABASE_DB_USER"].strip()
+          if not re.fullmatch(r"[a-z0-9-]+\.pooler\.supabase\.com", host):
+              raise SystemExit(
+                  "SUPABASE_DB_HOST must contain only the Supabase session-pooler host."
+              )
+          if os.environ.get("DB_PORT") != "5432":
+              raise SystemExit("Use session-pooler port 5432 for migrations.")
+          if not re.fullmatch(r"postgres\.[a-z0-9]+", user):
+              raise SystemExit(
+                  "SUPABASE_DB_USER must contain only the pooler username shown by Supabase Connect."
+              )
+
+          # Normalized derivatives may differ from GitHub's registered secret
+          # values, so mask them before any downstream command can log them.
+          print(f"::add-mask::{host}")
+          print(f"::add-mask::{user}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as environment:
+              environment.write(f"DB_HOST={host}\n")
+              environment.write(f"DB_USER={user}\n")
+          print("Connection identifiers normalized and validated; no values were logged.")
+          PY
 
       - name: Check whether schema is already current
         id: schema
         env:
-          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
-          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
           PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
@@ -208,10 +217,8 @@ jobs:
       - name: Apply schema migrations when needed
         if: steps.schema.outputs.ready != 'true'
         env:
-          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
-          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
           PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
@@ -221,10 +228,8 @@ jobs:
 
       - name: Seed reference data
         env:
-          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
-          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
           PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
@@ -234,10 +239,8 @@ jobs:
 
       - name: Initialize seeded user password
         env:
-          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
-          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
           PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
