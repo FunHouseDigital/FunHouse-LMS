@@ -67,6 +67,25 @@ jobs:
       - name: Verify API liveness
         run: curl --fail --silent --show-error --max-redirs 0 "${VERCEL_API_URL}/health" > /dev/null
 
+      - name: Install pinned Supabase CA certificate
+        env:
+          SUPABASE_CA_URL: https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt
+          SUPABASE_CA_SHA256: 700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7
+        run: |
+          set -euo pipefail
+          certificate="${RUNNER_TEMP}/supabase-prod-ca-2021.crt"
+          curl \
+            --proto '=https' \
+            --tlsv1.2 \
+            --fail \
+            --silent \
+            --show-error \
+            --max-redirs 0 \
+            "$SUPABASE_CA_URL" \
+            --output "$certificate"
+          echo "${SUPABASE_CA_SHA256}  ${certificate}" | sha256sum --check --strict
+          chmod 600 "$certificate"
+
       - name: Validate protected connection settings
         env:
           DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
@@ -114,7 +133,7 @@ jobs:
           DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
-          PGSSLROOTCERT: system
+          PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
           PGCONNECT_TIMEOUT: "15"
           PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
         run: |
@@ -195,7 +214,7 @@ jobs:
           DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
-          PGSSLROOTCERT: system
+          PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
           PGCONNECT_TIMEOUT: "15"
           PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
         run: python -m funhouse_pipeline.db.apply_migrations
@@ -208,7 +227,7 @@ jobs:
           DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
-          PGSSLROOTCERT: system
+          PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
           PGCONNECT_TIMEOUT: "15"
           PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
         run: python -m funhouse_pipeline.db.apply_seed
@@ -221,7 +240,7 @@ jobs:
           DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
-          PGSSLROOTCERT: system
+          PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
           PGCONNECT_TIMEOUT: "15"
           PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
           BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
