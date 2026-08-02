@@ -1,0 +1,290 @@
+name: Initialize Live Supabase Database
+
+# Manual, serialized production operation for the Vercel + Supabase deployment.
+# It applies a missing schema, seeds reference data, initializes one seeded
+# user's password, and verifies login without exposing the password or JWT.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Confirm the live database operation"
+        type: choice
+        required: true
+        options:
+          - initialize-live-supabase
+      bootstrap_user:
+        description: "Seeded user whose login should be initialized"
+        type: choice
+        required: true
+        default: Aya
+        options:
+          - Aya
+          - Loyiso
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-supabase-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  initialize:
+    name: Migrate, seed, and initialize login
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      BOOTSTRAP_USER_NAME: ${{ inputs.bootstrap_user }}
+      VERCEL_API_URL: https://fun-house-lms.vercel.app
+
+    steps:
+      - name: Require main branch and explicit confirmation
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run this production workflow from the main branch."
+            exit 1
+          fi
+          if [ "${{ inputs.confirmation }}" != "initialize-live-supabase" ]; then
+            echo "::error::Live database confirmation did not match."
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install application
+        run: python -m pip install .
+
+      - name: Verify API liveness
+        run: curl --fail --silent --show-error --max-redirs 0 "${VERCEL_API_URL}/health" > /dev/null
+
+      - name: Validate protected connection settings
+        env:
+          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
+          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in DB_HOST DB_USER DB_PASSWORD BOOTSTRAP_USER_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required production setting for ${name} is missing."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          case "$DB_HOST" in
+            *.pooler.supabase.com) ;;
+            *)
+              echo "::error::SUPABASE_DB_HOST must be the Supabase session-pooler host."
+              exit 1
+              ;;
+          esac
+          if [ "$DB_PORT" != "5432" ]; then
+            echo "::error::Use session-pooler port 5432 for migrations."
+            exit 1
+          fi
+          case "$DB_USER" in
+            postgres.*) ;;
+            *)
+              echo "::error::SUPABASE_DB_USER must be the pooler username shown by Supabase Connect."
+              exit 1
+              ;;
+          esac
+
+      - name: Check whether schema is already current
+        id: schema
+        env:
+          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
+          DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
+          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DB_SSLMODE: verify-full
+          PGSSLROOTCERT: system
+          PGCONNECT_TIMEOUT: "15"
+          PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
+        run: |
+          python - <<'PY'
+          import os
+
+          from funhouse_pipeline.config import load_config
+          from funhouse_pipeline.db import EXPECTED_TABLES, connect
+
+          connection = connect(load_config(), connect_timeout=15)
+          try:
+              with connection.cursor() as cursor:
+                  cursor.execute(
+                      """
+                      SELECT table_name
+                      FROM information_schema.tables
+                      WHERE table_schema = current_schema()
+                        AND table_name = ANY(%s)
+                      """,
+                      (list(EXPECTED_TABLES),),
+                  )
+                  tables = {row[0] for row in cursor.fetchall()}
+                  ready = tables == set(EXPECTED_TABLES)
+
+                  if ready:
+                      cursor.execute(
+                          """
+                          SELECT EXISTS (
+                              SELECT 1
+                              FROM information_schema.columns
+                              WHERE table_schema = current_schema()
+                                AND table_name = 'users'
+                                AND column_name = 'school_id'
+                          )
+                          """
+                      )
+                      ready = bool(cursor.fetchone()[0])
+
+                  if ready:
+                      cursor.execute(
+                          """
+                          SELECT EXISTS (
+                              SELECT 1
+                              FROM pg_trigger
+                              WHERE tgrelid = 'consents'::regclass
+                                AND tgname = 'trg_consents_append_only'
+                                AND NOT tgisinternal
+                          )
+                          """
+                      )
+                      ready = bool(cursor.fetchone()[0])
+
+                  if ready:
+                      cursor.execute(
+                          """
+                          SELECT pg_get_constraintdef(oid)
+                          FROM pg_constraint
+                          WHERE conrelid = 'users'::regclass
+                            AND conname = 'users_role_check'
+                          """
+                      )
+                      row = cursor.fetchone()
+                      ready = bool(row and "facilitator" in row[0])
+          finally:
+              connection.close()
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"ready={'true' if ready else 'false'}\n")
+          print("Schema readiness check complete; no credentials or row data were logged.")
+          PY
+
+      - name: Apply schema migrations when needed
+        if: steps.schema.outputs.ready != 'true'
+        env:
+          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
+          DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
+          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DB_SSLMODE: verify-full
+          PGSSLROOTCERT: system
+          PGCONNECT_TIMEOUT: "15"
+          PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
+        run: python -m funhouse_pipeline.db.apply_migrations
+
+      - name: Seed reference data
+        env:
+          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
+          DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
+          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DB_SSLMODE: verify-full
+          PGSSLROOTCERT: system
+          PGCONNECT_TIMEOUT: "15"
+          PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
+        run: python -m funhouse_pipeline.db.apply_seed
+
+      - name: Initialize seeded user password
+        env:
+          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
+          DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
+          DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DB_SSLMODE: verify-full
+          PGSSLROOTCERT: system
+          PGCONNECT_TIMEOUT: "15"
+          PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
+          BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
+        run: python -m funhouse_pipeline.db.bootstrap_user
+
+      - name: Verify live login
+        env:
+          BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          class NoRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          url = os.environ["VERCEL_API_URL"] + "/auth/login"
+          body = json.dumps(
+              {
+                  "identifier": os.environ["BOOTSTRAP_USER_NAME"],
+                  "password": os.environ["BOOTSTRAP_USER_PASSWORD"],
+              }
+          ).encode("utf-8")
+          request = urllib.request.Request(
+              url,
+              data=body,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          opener = urllib.request.build_opener(NoRedirects)
+          try:
+              with opener.open(request, timeout=30) as response:
+                  status = response.status
+                  payload = json.load(response)
+          except urllib.error.HTTPError as exc:
+              status = exc.code
+              payload = {}
+
+          valid_response = (
+              status == 200
+              and isinstance(payload.get("access_token"), str)
+              and bool(payload["access_token"])
+              and payload.get("token_type") == "bearer"
+              and isinstance(payload.get("expires_at"), str)
+          )
+          if not valid_response:
+              raise SystemExit(
+                  f"Live login probe failed with HTTP {status} or an invalid response. "
+                  "Check the Vercel DB_* environment variables and redeploy."
+              )
+          print("Live login probe succeeded; the JWT and password were not logged.")
+          PY
+
+      - name: Publish non-secret summary
+        run: |
+          {
+            echo "## Live Supabase initialization complete"
+            echo ""
+            echo "- Schema is current"
+            echo "- Reference data seeded"
+            echo "- Login initialized for \`${BOOTSTRAP_USER_NAME}\`"
+            echo "- Vercel API returned a valid login response"
+          } >> "$GITHUB_STEP_SUMMARY"
