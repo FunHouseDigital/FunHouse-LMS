@@ -19,9 +19,10 @@ Design references:
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 try:  # pyyaml is a runtime dependency; guard import for clearer errors.
     import yaml
@@ -69,21 +70,23 @@ class DatabaseConfig:
     sslmode: str = DEFAULT_DB_SSLMODE
 
     def dsn(self) -> str:
-        """Return a libpq/psycopg-compatible connection string.
+        """Return a safely quoted libpq/psycopg connection string.
 
-        Password is included only when set. Values are emitted as
-        ``key=value`` pairs; callers pass this to ``psycopg.connect``.
+        ``make_conninfo`` handles spaces, quotes, and backslashes in Supabase
+        credentials. The password is included only when configured.
         """
-        parts = [
-            f"host={self.host}",
-            f"port={self.port}",
-            f"dbname={self.dbname}",
-            f"user={self.user}",
-            f"sslmode={self.sslmode}",
-        ]
+        from psycopg.conninfo import make_conninfo
+
+        params: dict[str, str | int] = {
+            "host": self.host,
+            "port": self.port,
+            "dbname": self.dbname,
+            "user": self.user,
+            "sslmode": self.sslmode,
+        }
         if self.password is not None:
-            parts.append(f"password={self.password}")
-        return " ".join(parts)
+            params["password"] = self.password
+        return make_conninfo(**params)
 
 
 @dataclass(frozen=True)
@@ -96,7 +99,7 @@ class Config:
     llm_provider: str = DEFAULT_LLM_PROVIDER
     confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD
 
-    def validate(self) -> "Config":
+    def validate(self) -> Config:
         """Validate the merged configuration; raise ConfigError on problems."""
         errors: list[str] = []
 
