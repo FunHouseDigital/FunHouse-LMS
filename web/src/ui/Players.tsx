@@ -11,48 +11,69 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useReferenceData } from '../state/referenceDataState';
+import { useKnownPlayers, type PlayerChoice } from './useKnownPlayers';
 import {
   getAllLocalRecords,
   getBalances,
-  getCachedRead,
+  getMeta,
 } from '../store/localStore';
 import {
-  buildRosterRows,
   filterRoster,
+  summariseBalance,
+  summariseStatus,
   type RosterRow,
 } from '../domain/roster';
-import type { BalanceOut, PlayerOut } from '../domain/types';
+import { playerResolutionMetaKey } from '../domain/syncEngine';
+import type { BalanceOut } from '../domain/types';
 
 async function loadRosterRows(
-  playersCacheKey: string,
+  players: PlayerChoice[],
   cacheScope: string | null,
 ): Promise<RosterRow[]> {
-  const cached = await getCachedRead<PlayerOut[]>(playersCacheKey);
-  const players = cached?.data ?? [];
-
   const balancesByPlayer: Record<string, BalanceOut[]> = {};
   for (const player of players) {
-    const bal = await getBalances(player.id, cacheScope);
+    const balanceId = player.resolvedId ?? player.id;
+    const bal = await getBalances(balanceId, cacheScope);
     if (bal) balancesByPlayer[player.id] = bal.balances;
   }
 
-  // Derive last-visit from locally captured sessions (offline-safe).
-  const localSessions = await getAllLocalRecords('sessions', cacheScope);
+  // Derive last-visit from locally captured sessions (offline-safe). Resolve
+  // local player ids so hydrated server rows retain their pre-sync activity.
+  const [localSessions, resolutions] = cacheScope
+    ? await Promise.all([
+        getAllLocalRecords('sessions', cacheScope),
+        getMeta<Record<string, string>>(playerResolutionMetaKey(cacheScope)),
+      ])
+    : [[], undefined];
+  const resolvedByLocalId = resolutions ?? {};
   const lastVisitByPlayer: Record<string, string | null> = {};
   for (const session of localSessions) {
-    const pid = session.player_id ? String(session.player_id) : null;
-    if (!pid) continue;
+    const rawPlayerId = session.player_id ? String(session.player_id) : null;
+    if (!rawPlayerId) continue;
+    const playerId = resolvedByLocalId[rawPlayerId] ?? rawPlayerId;
     const day = typeof session.day === 'string' ? session.day : null;
-    if (day && (!lastVisitByPlayer[pid] || day > lastVisitByPlayer[pid]!)) {
-      lastVisitByPlayer[pid] = day;
+    if (day && (!lastVisitByPlayer[playerId] || day > lastVisitByPlayer[playerId]!)) {
+      lastVisitByPlayer[playerId] = day;
     }
   }
 
-  return buildRosterRows({ players, balancesByPlayer, lastVisitByPlayer });
+  return players.map((player) => {
+    const balances = balancesByPlayer[player.id];
+    const activityId = player.resolvedId ?? player.id;
+    return {
+      id: player.id,
+      name: player.name,
+      balance: summariseBalance(balances),
+      lastVisit: lastVisitByPlayer[activityId] ?? null,
+      entitlementStatus: player.source === 'local' ? 'pending sync' : summariseStatus(balances),
+      ...(player.source === 'local' ? { isLocal: true } : {}),
+    };
+  });
 }
 
 export function Players() {
-  const { revision, playersCacheKey, cacheScope } = useReferenceData();
+  const { cacheScope } = useReferenceData();
+  const players = useKnownPlayers();
   const [rows, setRows] = useState<RosterRow[]>([]);
   const [search, setSearch] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -60,7 +81,7 @@ export function Players() {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const next = await loadRosterRows(playersCacheKey, cacheScope);
+      const next = await loadRosterRows(players, cacheScope);
       if (alive) {
         setRows(next);
         setLoaded(true);
@@ -69,7 +90,7 @@ export function Players() {
     return () => {
       alive = false;
     };
-  }, [cacheScope, playersCacheKey, revision]);
+  }, [cacheScope, players]);
 
   const visible = useMemo(() => filterRoster(rows, search), [rows, search]);
 
@@ -92,7 +113,11 @@ export function Players() {
       <ul aria-label="Player roster">
         {visible.map((row) => (
           <li key={row.id} data-player-row={row.id}>
-            <Link to={`/players/${encodeURIComponent(row.id)}`}>{row.name}</Link>
+            {row.isLocal ? (
+              <span>{row.name}</span>
+            ) : (
+              <Link to={`/players/${encodeURIComponent(row.id)}`}>{row.name}</Link>
+            )}
             <span data-field="balance">
               {row.balance === null
                 ? 'no entitlement'

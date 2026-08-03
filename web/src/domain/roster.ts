@@ -20,6 +20,8 @@ export interface RosterRow {
   balance: number | 'unlimited' | null;
   lastVisit: string | null;
   entitlementStatus: string;
+  /** True for an encrypted local registration not yet present in hydration. */
+  isLocal?: boolean;
 }
 
 /** The full display name of a player row. */

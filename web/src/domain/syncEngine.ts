@@ -52,6 +52,48 @@ export const BACKGROUND_SYNC_TAG = 'funhouse-sync';
 export const RESOLUTION_META_KEY = 'player_id_resolutions';
 /** `meta` key holding local-session-id → server-record-id mappings. */
 export const SESSION_RESOLUTION_META_KEY = 'session_id_resolutions';
+/** Browser event used to invalidate mounted player rosters after local changes. */
+export const PLAYER_DIRECTORY_CHANGED_EVENT = 'funhouse-player-directory-changed';
+
+interface PlayerDirectoryChangedDetail {
+  scope: string | null;
+}
+
+/** Notify mounted player consumers that local identity state changed. */
+export function notifyPlayerDirectoryChanged(scope: string | null): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent<PlayerDirectoryChangedDetail>(PLAYER_DIRECTORY_CHANGED_EVENT, {
+      detail: { scope },
+    }),
+  );
+}
+
+/** Subscribe to player-directory changes for one authenticated owner. */
+export function subscribePlayerDirectoryChanged(
+  scope: string | null,
+  listener: () => void,
+): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  const handle = (event: Event) => {
+    const changed = event as CustomEvent<PlayerDirectoryChangedDetail>;
+    if (changed.detail?.scope === scope) listener();
+  };
+  window.addEventListener(PLAYER_DIRECTORY_CHANGED_EVENT, handle);
+  return () => window.removeEventListener(PLAYER_DIRECTORY_CHANGED_EVENT, handle);
+}
+
+/** Build the account-scoped player resolution metadata key. */
+export function playerResolutionMetaKey(scope: string | null): string {
+  return scope ? `${RESOLUTION_META_KEY}:${scope}` : RESOLUTION_META_KEY;
+}
+
+/** Build the account-scoped session resolution metadata key. */
+export function sessionResolutionMetaKey(scope: string | null): string {
+  return scope
+    ? `${SESSION_RESOLUTION_META_KEY}:${scope}`
+    : SESSION_RESOLUTION_META_KEY;
+}
 
 /** Outcome classification for a `flush()` attempt. */
 export type FlushOutcome = 'ok' | 'empty' | 'network-error' | 'unauthorized';
@@ -380,13 +422,11 @@ export class SyncEngine {
   }
 
   private resolutionMetaKey(scope: string | null): string {
-    return scope ? `${RESOLUTION_META_KEY}:${scope}` : RESOLUTION_META_KEY;
+    return playerResolutionMetaKey(scope);
   }
 
   private sessionResolutionMetaKey(scope: string | null): string {
-    return scope
-      ? `${SESSION_RESOLUTION_META_KEY}:${scope}`
-      : SESSION_RESOLUTION_META_KEY;
+    return sessionResolutionMetaKey(scope);
   }
 
   /** Merge new local→server player-id mappings into the persisted resolution map. */
@@ -398,6 +438,7 @@ export class SyncEngine {
     const map = (await getMeta<Record<string, string>>(key)) ?? {};
     Object.assign(map, newOnes);
     await setMeta(key, map);
+    notifyPlayerDirectoryChanged(scope);
   }
 
   /** Merge local→server session-id mappings into scoped metadata. */

@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../state/authState';
+import { useReferenceData } from '../state/referenceDataState';
 import { getActionsByStatus } from '../store/localStore';
 import { mergePlayerDetail, type LocalPlayerRecords, type MergedPlayerDetail } from '../domain/roster';
 import type { PlayerHistory, StoredSyncAction } from '../domain/types';
@@ -22,8 +23,12 @@ const EMPTY_HISTORY = (playerId: string): PlayerHistory => ({
 });
 
 /** Gather this player's locally captured, not-yet-synced records from the queue. */
-async function localUnsyncedFor(playerId: string): Promise<LocalPlayerRecords> {
-  const unsynced: StoredSyncAction[] = await getActionsByStatus('unsynced');
+async function localUnsyncedFor(
+  playerId: string,
+  scope: string | null,
+): Promise<LocalPlayerRecords> {
+  if (!scope) return {};
+  const unsynced: StoredSyncAction[] = await getActionsByStatus('unsynced', scope);
   const forPlayer = unsynced.filter((a) => a.player_id === playerId || (a.payload as Record<string, unknown>)?.player_id === playerId);
   return {
     sessions: forPlayer.filter((a) => a.entity === 'session').map((a) => ({ ...a.payload, __local: true, client_id: a.client_id })),
@@ -37,6 +42,7 @@ async function localUnsyncedFor(playerId: string): Promise<LocalPlayerRecords> {
 export function PlayerDetail() {
   const { id = '' } = useParams();
   const { client } = useAuth();
+  const { cacheScope } = useReferenceData();
   const [merged, setMerged] = useState<MergedPlayerDetail | null>(null);
 
   useEffect(() => {
@@ -48,13 +54,13 @@ export function PlayerDetail() {
       } catch {
         // Offline / error → local-only detail (Req 9.3 fallback).
       }
-      const local = await localUnsyncedFor(id);
+      const local = await localUnsyncedFor(id, cacheScope);
       if (alive) setMerged(mergePlayerDetail(server, local));
     })();
     return () => {
       alive = false;
     };
-  }, [id, client]);
+  }, [cacheScope, id, client]);
 
   const totals = useMemo(() => {
     if (!merged) return { sessions: 0, payments: 0, draws: 0 };
