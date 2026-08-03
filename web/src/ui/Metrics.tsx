@@ -16,6 +16,7 @@
  */
 import { useCallback, useState } from 'react';
 import { useServices } from '../state/servicesState';
+import { useAuth } from '../state/authState';
 import {
   buildMetricsActions,
   canSaveMetricsRow,
@@ -42,6 +43,7 @@ function newRow(): GridRow {
 
 export function Metrics() {
   const { commit } = useServices();
+  const { role } = useAuth();
   const [rows, setRows] = useState<GridRow[]>(() => [newRow(), newRow(), newRow()]);
 
   const update = useCallback((key: string, patch: Partial<GridRow>) => {
@@ -106,6 +108,7 @@ export function Metrics() {
                     idSuffix={row.key}
                     selectedId={row.playerId}
                     onSelect={(player) => selectPlayer(row.key, player)}
+                    includeLocal={role !== 'facilitator'}
                   />
                   {row.studentName && (
                     <span data-selected-student={row.key}>{row.studentName}</span>

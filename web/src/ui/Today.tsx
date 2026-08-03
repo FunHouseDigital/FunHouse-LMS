@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useSyncStatus } from '../state/syncState';
+import { useReferenceData } from '../state/referenceDataState';
 import { getAllLocalRecords, type LocalRecord } from '../store/localStore';
 import {
   MONTHLY_PACE_TARGET_RAND,
@@ -24,21 +25,22 @@ function todayIso(): string {
 
 export function Today() {
   const { unsyncedCount } = useSyncStatus();
+  const { cacheScope } = useReferenceData();
   const [totals, setTotals] = useState<TodayTotals>({ cashTotalCents: 0, sessionCount: 0 });
   const day = useMemo(() => todayIso(), []);
 
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const payments: LocalRecord[] = await getAllLocalRecords('payments');
-      const sessions: LocalRecord[] = await getAllLocalRecords('sessions');
+      const payments: LocalRecord[] = await getAllLocalRecords('payments', cacheScope);
+      const sessions: LocalRecord[] = await getAllLocalRecords('sessions', cacheScope);
       const next = computeTodayTotals(payments, sessions, day);
       if (alive) setTotals(next);
     })();
     return () => {
       alive = false;
     };
-  }, [day, unsyncedCount]);
+  }, [cacheScope, day, unsyncedCount]);
 
   const pace = paceFraction(totals.cashTotalCents);
 

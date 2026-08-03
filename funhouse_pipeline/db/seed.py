@@ -89,16 +89,18 @@ SEED_PRODUCTS: tuple[SeedProduct, ...] = (
 
 @dataclass(frozen=True)
 class SeedUser:
-    """A user to seed. Natural identity = name (no email is provided by the PRD)."""
+    """A user to seed. Facilitators may be bound to a partner school."""
 
     name: str
     role: str
+    school_name: str | None = None
 
 
 # users (Req 2.7). Natural identity = name.
 SEED_USERS: tuple[SeedUser, ...] = (
     SeedUser("Aya", "founder"),
     SeedUser("Loyiso", "manager"),
+    SeedUser("Facilitator", "facilitator", "Smithfield Primary"),
 )
 
 # Total number of rows a full seed inserts into a fresh database.
@@ -228,24 +230,27 @@ def seed(conn: Any) -> SeedResult:
         rows.append(SeedRowResult("locations", SMITHFIELD_LOCATION, status))
 
         # 2. schools — partner (Req 2.2) then proposed (Req 2.3).
+        school_ids: dict[str, Any] = {}
         for name in PARTNER_SCHOOLS:
-            _, status = _insert_if_absent(
+            school_id, status = _insert_if_absent(
                 cursor,
                 "schools",
                 "name",
                 name,
                 {"name": name, "contract_status": "partner", "location_id": location_id},
             )
+            school_ids[name] = school_id
             rows.append(SeedRowResult("schools", name, status))
 
         for name in PROPOSED_SCHOOLS:
-            _, status = _insert_if_absent(
+            school_id, status = _insert_if_absent(
                 cursor,
                 "schools",
                 "name",
                 name,
                 {"name": name, "contract_status": "proposed", "location_id": location_id},
             )
+            school_ids[name] = school_id
             rows.append(SeedRowResult("schools", name, status))
 
         # 3. products (Req 2.4-2.6). rules stored as JSONB.
@@ -266,14 +271,21 @@ def seed(conn: Any) -> SeedResult:
             )
             rows.append(SeedRowResult("products", product.name, status))
 
-        # 4. users — Aya (founder), Loyiso (manager) (Req 2.7).
+        # 4. users — operational founder, manager, and school facilitator.
         for user in SEED_USERS:
+            values: dict[str, Any] = {
+                "name": user.name,
+                "role": user.role,
+                "location_id": location_id,
+            }
+            if user.school_name is not None:
+                values["school_id"] = school_ids[user.school_name]
             _, status = _insert_if_absent(
                 cursor,
                 "users",
                 "name",
                 user.name,
-                {"name": user.name, "role": user.role, "location_id": location_id},
+                values,
             )
             rows.append(SeedRowResult("users", user.name, status))
 

@@ -9,9 +9,11 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../state/authState';
 import { navScreensFor, type NavAuthState } from '../domain/navigation';
+import { useSyncStatus } from '../state/syncState';
 
 export function AppShellNav() {
   const { isAuthenticated, role, logout } = useAuth();
+  const { quarantinedCount } = useSyncStatus();
   const state: NavAuthState = { authenticated: isAuthenticated, role };
 
   // Unauthenticated: navigation is restricted to login only (Req 2.3) — the
@@ -33,6 +35,12 @@ export function AppShellNav() {
           </li>
         ))}
       </ul>
+      {quarantinedCount > 0 && (
+        <p role="alert">
+          {quarantinedCount} older offline {quarantinedCount === 1 ? 'item is' : 'items are'}
+          {' '}quarantined because the owning account is unknown. They will not be uploaded.
+        </p>
+      )}
       <button type="button" onClick={logout}>
         Log out
       </button>

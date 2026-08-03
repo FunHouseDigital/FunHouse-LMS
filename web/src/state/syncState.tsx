@@ -17,10 +17,13 @@ import {
   type ReactNode,
 } from 'react';
 import type { StoredSyncAction } from '../domain/types';
+import { useAuth } from './authState';
+import { sessionScopeKey } from './referenceDataState';
 import {
   countUnsynced,
   getActionsByStatus,
   getLastSuccessfulSync,
+  getLegacyUnscopedActions,
 } from '../store/localStore';
 
 /**
@@ -52,7 +55,9 @@ export interface RejectedItem {
 export interface SyncStatusView {
   /** Current count of Unsynced_Items (Req 6.1). */
   unsyncedCount: number;
-  /** Synced indicator: true when nothing is pending (Req 6.3). */
+  /** Pre-account-scoping actions quarantined because their owner is unknown. */
+  quarantinedCount: number;
+  /** Synced indicator: true when nothing is pending or quarantined (Req 6.3). */
   synced: boolean;
   /** Stale-device warning; may coexist with `synced` (Req 6.4). */
   stale: boolean;
@@ -69,10 +74,13 @@ export function deriveSyncStatus(input: {
   lastSuccessfulSync: string | null;
   now?: number;
   rejected?: RejectedItem[];
+  quarantinedCount?: number;
 }): SyncStatusView {
+  const quarantinedCount = input.quarantinedCount ?? 0;
   return {
     unsyncedCount: input.unsyncedCount,
-    synced: input.unsyncedCount === 0,
+    quarantinedCount,
+    synced: input.unsyncedCount === 0 && quarantinedCount === 0,
     stale: isStale(input.lastSuccessfulSync, input.now),
     rejected: input.rejected ?? [],
   };
@@ -87,17 +95,22 @@ function toRejectedItem(action: StoredSyncAction): RejectedItem {
 }
 
 /** Read the Local_Store and compute the current sync-status view (Req 6). */
-export async function readSyncStatus(now: number = Date.now()): Promise<SyncStatusView> {
-  const [unsyncedCount, lastSync, rejectedActions] = await Promise.all([
-    countUnsynced(),
-    getLastSuccessfulSync(),
-    getActionsByStatus('rejected'),
+export async function readSyncStatus(
+  now: number = Date.now(),
+  scope?: string | null,
+): Promise<SyncStatusView> {
+  const [unsyncedCount, lastSync, rejectedActions, quarantinedActions] = await Promise.all([
+    countUnsynced(scope),
+    getLastSuccessfulSync(scope),
+    getActionsByStatus('rejected', scope),
+    scope ? getLegacyUnscopedActions() : Promise.resolve([]),
   ]);
   return deriveSyncStatus({
     unsyncedCount,
     lastSuccessfulSync: lastSync,
     now,
     rejected: rejectedActions.map(toRejectedItem),
+    quarantinedCount: quarantinedActions.length,
   });
 }
 
@@ -110,6 +123,7 @@ const SyncStatusContext = createContext<SyncStatusContextValue | null>(null);
 
 const EMPTY_VIEW: SyncStatusView = {
   unsyncedCount: 0,
+  quarantinedCount: 0,
   synced: true,
   stale: false,
   rejected: [],
@@ -122,12 +136,14 @@ export interface SyncStatusProviderProps {
 }
 
 export function SyncStatusProvider({ children, now }: SyncStatusProviderProps) {
+  const { session } = useAuth();
+  const syncScope = sessionScopeKey(session);
   const [view, setView] = useState<SyncStatusView>(EMPTY_VIEW);
 
   const refresh = useCallback(async () => {
-    const next = await readSyncStatus(now ? now() : Date.now());
+    const next = await readSyncStatus(now ? now() : Date.now(), syncScope);
     setView(next);
-  }, [now]);
+  }, [now, syncScope]);
 
   useEffect(() => {
     void refresh();

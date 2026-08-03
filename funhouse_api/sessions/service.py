@@ -126,10 +126,15 @@ def log_session(
     except AuthzError as exc:
         raise SessionScopeError(str(exc)) from exc
 
-    # The session inherits the player's location scope; a facilitator's session
-    # takes the player's school when none is supplied.
+    # The session inherits the player's location. A supplied school must remain
+    # inside the caller's scope; this prevents a facilitator from relabeling an
+    # in-school player's session as belonging to another school.
     location_id = player_location
     effective_school = school_id if school_id is not None else player_school
+    try:
+        scope.assert_can_write(location_id, effective_school)
+    except AuthzError as exc:
+        raise SessionScopeError(str(exc)) from exc
 
     # Perform the optional draw first so a rejected draw leaves no session
     # (Req 7.3). engine.draw manages its own transaction + digital signature.

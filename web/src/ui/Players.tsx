@@ -37,7 +37,7 @@ async function loadRosterRows(
   }
 
   // Derive last-visit from locally captured sessions (offline-safe).
-  const localSessions = await getAllLocalRecords('sessions');
+  const localSessions = await getAllLocalRecords('sessions', cacheScope);
   const lastVisitByPlayer: Record<string, string | null> = {};
   for (const session of localSessions) {
     const pid = session.player_id ? String(session.player_id) : null;

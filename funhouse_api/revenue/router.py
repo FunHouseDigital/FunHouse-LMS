@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
 from funhouse_api.db import get_connection
@@ -32,6 +33,8 @@ def revenue_summary(
     conn: Any = Depends(get_connection),
 ) -> RevenueSummaryModel:
     """Return the scoped three-stream revenue summary (Req 11)."""
+    if scope.role not in {"founder", "manager"}:
+        raise HTTPException(status_code=403, detail="Forbidden")
     result = reporter.summary(conn, scope)
     return RevenueSummaryModel(
         pay_per_use_cents=result.pay_per_use_cents,

@@ -25,6 +25,7 @@ export interface ReferenceDataContextValue {
   status: ReferenceDataStatus;
   playersAvailable: boolean;
   productsAvailable: boolean;
+  productsRequired: boolean;
   lastRefreshedAt: string | null;
   revision: number;
   cacheScope: string | null;
@@ -38,6 +39,7 @@ const DEFAULT_VALUE: ReferenceDataContextValue = {
   status: 'idle',
   playersAvailable: false,
   productsAvailable: false,
+  productsRequired: true,
   lastRefreshedAt: null,
   revision: 0,
   cacheScope: null,
@@ -59,7 +61,7 @@ function latestTimestamp(...timestamps: Array<string | undefined>): string | nul
   return present.reduce((latest, value) => (value > latest ? value : latest));
 }
 
-function cacheScopeFor(session: Session | null): string | null {
+export function sessionScopeKey(session: Session | null): string | null {
   if (!session) return null;
   const claims = decodeJwtPayload(session.access_token);
   const subject = typeof claims?.sub === 'string' ? claims.sub : 'unknown-user';
@@ -75,7 +77,8 @@ function cacheKey(dataset: 'players' | 'products', scope: string | null): string
 
 export function ReferenceDataProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, session, client, logout } = useAuth();
-  const cacheScope = useMemo(() => cacheScopeFor(session), [session]);
+  const cacheScope = useMemo(() => sessionScopeKey(session), [session]);
+  const productsRequired = session?.role !== 'facilitator';
   const playersCacheKey = cacheKey('players', cacheScope);
   const productsCacheKey = cacheKey('products', cacheScope);
 
@@ -108,7 +111,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
     if (generation !== requestGeneration.current || activeScope.current !== cacheScope) return;
 
     const hadPlayers = cachedPlayers !== undefined;
-    const hadProducts = cachedProducts !== undefined;
+    const hadProducts = !productsRequired || cachedProducts !== undefined;
     setPlayersAvailable(hadPlayers);
     setProductsAvailable(hadProducts);
     setLastRefreshedAt(
@@ -127,7 +130,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
     await clearAuthenticatedResponseCaches();
     const [playersResult, productsResult] = await Promise.allSettled([
       client.getPlayers(),
-      client.getProducts(),
+      productsRequired ? client.getProducts() : Promise.resolve([]),
     ]);
     if (generation !== requestGeneration.current || activeScope.current !== cacheScope) return;
 
@@ -147,7 +150,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
           ])
         : [];
     const productWrite =
-      productsResult.status === 'fulfilled'
+      productsRequired && productsResult.status === 'fulfilled'
         ? await Promise.allSettled([
             writeCachedRead(productsCacheKey, productsResult.value, refreshedAt),
           ])
@@ -155,7 +158,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
     if (generation !== requestGeneration.current || activeScope.current !== cacheScope) return;
 
     const playersStored = playerWrite[0]?.status === 'fulfilled';
-    const productsStored = productWrite[0]?.status === 'fulfilled';
+    const productsStored = !productsRequired || productWrite[0]?.status === 'fulfilled';
     setPlayersAvailable(hadPlayers || playersStored);
     setProductsAvailable(hadProducts || productsStored);
     if (playersStored || productsStored) {
@@ -170,6 +173,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
     logout,
     playersCacheKey,
     productsCacheKey,
+    productsRequired,
   ]);
 
   const refresh = useCallback(async () => {
@@ -264,6 +268,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
       status,
       playersAvailable,
       productsAvailable,
+      productsRequired,
       lastRefreshedAt,
       revision,
       cacheScope,
@@ -276,6 +281,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
       status,
       playersAvailable,
       productsAvailable,
+      productsRequired,
       lastRefreshedAt,
       revision,
       cacheScope,

@@ -19,6 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAuth } from './authState';
+import { sessionScopeKey } from './referenceDataState';
 import { useSyncStatus } from './syncState';
 import { SyncEngine, SyncScheduler, type FlushResult } from '../domain/syncEngine';
 import { countUnsynced } from '../store/localStore';
@@ -41,8 +42,11 @@ export interface ServicesProviderProps {
 }
 
 export function ServicesProvider({ children, scheduler: injected }: ServicesProviderProps) {
-  const { client, authManager } = useAuth();
+  const { client, authManager, session } = useAuth();
   const { refresh } = useSyncStatus();
+  const syncScope = sessionScopeKey(session);
+  const scopeRef = useRef<string | null>(syncScope);
+  scopeRef.current = syncScope;
 
   const ref = useRef<{
     scheduler: Pick<SyncScheduler, 'onEnqueue'>;
@@ -56,11 +60,12 @@ export function ServicesProvider({ children, scheduler: injected }: ServicesProv
       const engine = new SyncEngine({
         client,
         onUnauthorized: () => authManager.handleUnauthorized(),
+        getScope: () => scopeRef.current,
       });
       const flush = () => engine.flush();
       const full = new SyncScheduler({
         flush,
-        countUnsynced,
+        countUnsynced: () => countUnsynced(scopeRef.current),
       });
       ref.current = { scheduler: full, full, flush };
     }
@@ -88,7 +93,7 @@ export function ServicesProvider({ children, scheduler: injected }: ServicesProv
 
   const value = useMemo<CaptureServicesValue>(() => {
     const scheduler = ref.current!.scheduler;
-    const deps: CommitDeps = { scheduler };
+    const deps: CommitDeps = { scheduler, scope: syncScope };
     return {
       scheduler,
       commit: async (result: CaptureResult) => {
@@ -96,7 +101,7 @@ export function ServicesProvider({ children, scheduler: injected }: ServicesProv
         await refresh();
       },
     };
-  }, [refresh]);
+  }, [refresh, syncScope]);
 
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }

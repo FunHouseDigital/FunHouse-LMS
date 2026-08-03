@@ -81,6 +81,9 @@ def create_session(
     """Log a session with optional payment/draw within scope (Req 7)."""
     if body.session_type not in _SESSION_TYPES:
         raise HTTPException(status_code=422, detail="invalid session_type")
+    if scope.role == "facilitator":
+        if body.session_type == "lounge" or body.payment is not None or body.draw is not None:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
     payment = (
         service.PaymentInput(

@@ -230,6 +230,13 @@ export class AuthManager {
       throw err;
     }
 
+    const role = decodeRoleFromJwt(response.access_token);
+    if (role === null) {
+      clearSessionKey();
+      return { ok: false, kind: 'invalid_credentials' };
+    }
+    const location_id = decodeLocationFromJwt(response.access_token);
+
     // Derive/hold the encryption key from the login secret + per-device salt.
     let salt = await getMeta<string>(CRYPTO_SALT_META_KEY);
     if (!salt) {
@@ -237,9 +244,6 @@ export class AuthManager {
       await setMeta(CRYPTO_SALT_META_KEY, salt);
     }
     await initSessionKey(password, salt);
-
-    const role = decodeRoleFromJwt(response.access_token) ?? 'facilitator';
-    const location_id = decodeLocationFromJwt(response.access_token);
 
     const session: Session = {
       access_token: response.access_token,

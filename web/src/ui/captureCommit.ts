@@ -12,7 +12,11 @@
  */
 import type { CaptureResult } from '../domain/captures/types';
 import { encryptPayload, getSessionKey } from '../domain/crypto';
-import { enqueueAction, writeLocalRecord } from '../store/localStore';
+import {
+  enqueueAction,
+  writeLocalRecord,
+  type LocalRecord,
+} from '../store/localStore';
 import type { SyncScheduler } from '../domain/syncEngine';
 
 export interface CommitDeps {
@@ -23,6 +27,8 @@ export interface CommitDeps {
    * Pass `null` explicitly to force the no-key path in tests.
    */
   sessionKey?: CryptoKey | null;
+  /** Authenticated account/location/school scope owning persisted actions. */
+  scope?: string | null;
 }
 
 /**
@@ -36,7 +42,10 @@ export async function commitCapture(result: CaptureResult, deps: CommitDeps = {}
   const key = deps.sessionKey !== undefined ? deps.sessionKey : getSessionKey();
 
   for (const captureRecord of result.records) {
-    const record = { ...captureRecord.record };
+    const record: LocalRecord = {
+      ...captureRecord.record,
+      ...(deps.scope ? { sync_scope: deps.scope } : {}),
+    };
     if (captureRecord.personal) {
       if (key) {
         record.enc = await encryptPayload(key, captureRecord.personal);
@@ -47,10 +56,10 @@ export async function commitCapture(result: CaptureResult, deps: CommitDeps = {}
   }
 
   for (const captureAction of result.actions) {
-    await enqueueAction(
-      captureAction.action,
-      captureAction.status ? { status: captureAction.status } : {},
-    );
+    await enqueueAction(captureAction.action, {
+      ...(captureAction.status ? { status: captureAction.status } : {}),
+      ...(deps.scope ? { scope: deps.scope } : {}),
+    });
   }
 
   if (deps.scheduler) {

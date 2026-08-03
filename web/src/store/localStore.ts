@@ -39,6 +39,8 @@ export interface LocalRecord {
   name?: string;
   day?: string;
   session_id?: string;
+  /** Authenticated account/location/school scope that owns this local mirror. */
+  sync_scope?: string;
   [key: string]: unknown;
 }
 
@@ -220,7 +222,7 @@ export function compareByCreatedAt(a: SyncAction, b: SyncAction): number {
  */
 export async function enqueueAction<P>(
   action: SyncAction<P>,
-  opts: { status?: SyncStatus } = {},
+  opts: { status?: SyncStatus; scope?: string | null } = {},
 ): Promise<StoredSyncAction<P>> {
   const db = await getDb();
   const player_id = extractPlayerId(action.payload);
@@ -228,6 +230,7 @@ export async function enqueueAction<P>(
     ...action,
     status: opts.status ?? 'unsynced',
     attempt_count: 0,
+    ...(opts.scope ? { sync_scope: opts.scope } : {}),
     ...(player_id !== undefined ? { player_id } : {}),
   };
   await db.put('sync_queue', stored as unknown as StoredSyncAction);
@@ -235,19 +238,37 @@ export async function enqueueAction<P>(
 }
 
 /** Read all queued actions with a given status. */
-export async function getActionsByStatus(status: SyncStatus): Promise<StoredSyncAction[]> {
+export async function getActionsByStatus(
+  status: SyncStatus,
+  scope?: string | null,
+): Promise<StoredSyncAction[]> {
   const db = await getDb();
-  return db.getAllFromIndex('sync_queue', 'by_status', status);
+  const actions = await db.getAllFromIndex('sync_queue', 'by_status', status);
+  return scope ? actions.filter((action) => action.sync_scope === scope) : actions;
+}
+
+/**
+ * Return pre-scoping queue items whose owner cannot be established safely.
+ * They are quarantined: visible as a device warning, but never assigned to the
+ * next account or transmitted under that account's credentials.
+ */
+export async function getLegacyUnscopedActions(
+  status: SyncStatus = 'unsynced',
+): Promise<StoredSyncAction[]> {
+  const db = await getDb();
+  const actions = await db.getAllFromIndex('sync_queue', 'by_status', status);
+  return actions.filter((action) => !action.sync_scope);
 }
 
 /** Read the unsynced actions ordered by `created_at` then `client_id` (Req 5.1). */
-export async function getUnsyncedActions(): Promise<StoredSyncAction[]> {
-  const actions = await getActionsByStatus('unsynced');
+export async function getUnsyncedActions(scope?: string | null): Promise<StoredSyncAction[]> {
+  const actions = await getActionsByStatus('unsynced', scope);
   return actions.sort(compareByCreatedAt);
 }
 
 /** Count the current Unsynced_Items (drives the badge, Req 6.1). */
-export async function countUnsynced(): Promise<number> {
+export async function countUnsynced(scope?: string | null): Promise<number> {
+  if (scope) return (await getActionsByStatus('unsynced', scope)).length;
   const db = await getDb();
   return db.countFromIndex('sync_queue', 'by_status', 'unsynced');
 }
@@ -313,10 +334,14 @@ export async function getLocalRecord(
   return db.get(store, localId);
 }
 
-/** Read all records from a local store. */
-export async function getAllLocalRecords(store: LocalRecordStore): Promise<LocalRecord[]> {
+/** Read all records from a local store, optionally restricted to one owner. */
+export async function getAllLocalRecords(
+  store: LocalRecordStore,
+  scope?: string | null,
+): Promise<LocalRecord[]> {
   const db = await getDb();
-  return db.getAll(store);
+  const records = await db.getAll(store);
+  return scope ? records.filter((record) => record.sync_scope === scope) : records;
 }
 
 /** Read local records via one of the store's indexes (e.g. `by_day`, `by_player`). */
@@ -398,12 +423,19 @@ export async function getOrCreateDeviceId(): Promise<string> {
   return id;
 }
 
+function lastSuccessfulSyncKey(scope?: string | null): string {
+  return scope ? `last_successful_sync:${scope}` : 'last_successful_sync';
+}
+
 /** Read the last successful sync timestamp (drives the >5-day stale warning, Req 6.4). */
-export async function getLastSuccessfulSync(): Promise<string | null> {
-  return (await getMeta<string>('last_successful_sync')) ?? null;
+export async function getLastSuccessfulSync(scope?: string | null): Promise<string | null> {
+  return (await getMeta<string>(lastSuccessfulSyncKey(scope))) ?? null;
 }
 
 /** Record the last successful sync timestamp (Req 6.4 basis). */
-export async function setLastSuccessfulSync(timestamp: string): Promise<void> {
-  await setMeta('last_successful_sync', timestamp);
+export async function setLastSuccessfulSync(
+  timestamp: string,
+  scope?: string | null,
+): Promise<void> {
+  await setMeta(lastSuccessfulSyncKey(scope), timestamp);
 }

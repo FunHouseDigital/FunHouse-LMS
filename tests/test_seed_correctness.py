@@ -68,7 +68,11 @@ def test_product_definitions_match_design():
 def test_seed_users_have_expected_roles():
     # Req 2.7
     roles = {u.name: u.role for u in SEED_USERS}
-    assert roles == {"Aya": "founder", "Loyiso": "manager"}
+    assert roles == {
+        "Aya": "founder",
+        "Loyiso": "manager",
+        "Facilitator": "facilitator",
+    }
 
 
 # --------------------------------------------------------------------------- #

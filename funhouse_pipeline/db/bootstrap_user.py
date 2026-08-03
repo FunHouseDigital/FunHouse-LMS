@@ -20,6 +20,7 @@ from funhouse_pipeline.db import SEED_USERS, SMITHFIELD_LOCATION, connect
 _MIN_PASSWORD_CHARS = 12
 _MAX_BCRYPT_BYTES = 72
 _EXPECTED_USER_ROLES = {user.name: user.role for user in SEED_USERS}
+_EXPECTED_USER_SCHOOLS = {user.name: user.school_name for user in SEED_USERS}
 _ALLOWED_USER_NAMES = frozenset(_EXPECTED_USER_ROLES)
 
 
@@ -63,9 +64,11 @@ def bootstrap_user(
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT users.id, users.role, users.password_hash, locations.name
+                SELECT users.id, users.role, users.password_hash, locations.name,
+                       schools.name
                 FROM users
                 JOIN locations ON locations.id = users.location_id
+                LEFT JOIN schools ON schools.id = users.school_id
                 WHERE users.name = %s
                 FOR UPDATE OF users
                 """,
@@ -81,10 +84,15 @@ def bootstrap_user(
                     f"Seeded user {name!r} is ambiguous ({len(rows)} rows); repair the data first"
                 )
 
-            user_id, role, existing_hash, location_name = rows[0]
-            if role != expected_role or location_name != SMITHFIELD_LOCATION:
+            user_id, role, existing_hash, location_name, school_name = rows[0]
+            expected_school = _EXPECTED_USER_SCHOOLS[name]
+            if (
+                role != expected_role
+                or location_name != SMITHFIELD_LOCATION
+                or school_name != expected_school
+            ):
                 raise BootstrapError(
-                    f"{name!r} does not match the expected seeded role and location"
+                    f"{name!r} does not match the expected seeded role, location, and school"
                 )
             if existing_hash and verify_password(password, existing_hash):
                 outcome = "already initialized; unchanged"

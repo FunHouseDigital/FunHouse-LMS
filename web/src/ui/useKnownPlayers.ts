@@ -26,8 +26,9 @@ export interface PlayerChoice {
  * 7.2, 9.1). Local players are excluded when they already appear in the cached
  * roster (same id).
  */
-export function useKnownPlayers(): PlayerChoice[] {
-  const { revision, playersCacheKey } = useReferenceData();
+export function useKnownPlayers(options: { includeLocal?: boolean } = {}): PlayerChoice[] {
+  const { includeLocal = true } = options;
+  const { revision, playersCacheKey, cacheScope } = useReferenceData();
   const [players, setPlayers] = useState<PlayerChoice[]>([]);
   useEffect(() => {
     let alive = true;
@@ -37,7 +38,7 @@ export function useKnownPlayers(): PlayerChoice[] {
         id: p.id,
         name: playerName(p),
       }));
-      const local = await getAllLocalRecords('players');
+      const local = includeLocal ? await getAllLocalRecords('players', cacheScope) : [];
       const localChoices: PlayerChoice[] = local
         .map((r: LocalRecord) => ({ id: String(r.local_id), name: String(r.name ?? 'New player') }))
         .filter((c) => !roster.some((r) => r.id === c.id));
@@ -46,6 +47,6 @@ export function useKnownPlayers(): PlayerChoice[] {
     return () => {
       alive = false;
     };
-  }, [playersCacheKey, revision]);
+  }, [cacheScope, includeLocal, playersCacheKey, revision]);
   return players;
 }

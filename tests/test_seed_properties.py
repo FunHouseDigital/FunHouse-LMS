@@ -30,11 +30,19 @@ _DB_SETTINGS = settings(
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 
-# The rows that may be independently removed and re-seeded. The Smithfield
-# location is intentionally excluded because every other row references it via
-# location_id, so it must remain present as the FK parent.
+# Rows may be removed independently only when no other seeded row references
+# them. The Smithfield location remains because every row references it, and a
+# school assigned to a seeded user remains because users.school_id restricts
+# parent deletion. Derive the latter set so future school-bound users are safe.
+_USER_BOUND_SCHOOLS = frozenset(
+    user.school_name for user in SEED_USERS if user.school_name is not None
+)
 _DELETABLE_ROWS: tuple[tuple[str, str], ...] = (
-    *[("schools", name) for name in (*PARTNER_SCHOOLS, *PROPOSED_SCHOOLS)],
+    *[
+        ("schools", name)
+        for name in (*PARTNER_SCHOOLS, *PROPOSED_SCHOOLS)
+        if name not in _USER_BOUND_SCHOOLS
+    ],
     *[("products", p.name) for p in SEED_PRODUCTS],
     *[("users", u.name) for u in SEED_USERS],
 )
@@ -62,7 +70,11 @@ def _table_count(conn, table: str) -> int:
 # creates no duplicate rows and leaves the existing rows unchanged.
 # Validates: Requirements 2.8
 @_DB_SETTINGS
-@given(present_mask=st.lists(st.booleans(), min_size=len(_DELETABLE_ROWS), max_size=len(_DELETABLE_ROWS)))
+@given(
+    present_mask=st.lists(
+        st.booleans(), min_size=len(_DELETABLE_ROWS), max_size=len(_DELETABLE_ROWS)
+    )
+)
 def test_property_4_seeding_is_idempotent(migrated_db, present_mask):
     conn = migrated_db
 
@@ -94,9 +106,7 @@ def test_property_4_seeding_is_idempotent(migrated_db, present_mask):
     after = {t: _snapshot(conn, t) for t in ("locations", "schools", "products", "users")}
     for table, snap in before.items():
         for name, identity in snap.items():
-            assert after[table][name] == identity, (
-                f"re-seed altered existing row {table}:{name}"
-            )
+            assert after[table][name] == identity, f"re-seed altered existing row {table}:{name}"
 
     # The re-seed must skip every row that was still present.
     reinserted = {(r.table, r.identity) for r in result.inserted()}

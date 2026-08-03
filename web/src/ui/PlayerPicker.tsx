@@ -20,10 +20,18 @@ export interface PlayerPickerProps {
   idSuffix?: string;
   /** Max recent players shown for a blank query (default 5). */
   recentLimit?: number;
+  /** Whether locally registered, not-yet-synced players may be selected. */
+  includeLocal?: boolean;
 }
 
-export function PlayerPicker({ selectedId, onSelect, idSuffix, recentLimit = 5 }: PlayerPickerProps) {
-  const players = useKnownPlayers();
+export function PlayerPicker({
+  selectedId,
+  onSelect,
+  idSuffix,
+  recentLimit = 5,
+  includeLocal = true,
+}: PlayerPickerProps) {
+  const players = useKnownPlayers({ includeLocal });
   const [search, setSearch] = useState('');
 
   const recent = useMemo(() => players.slice(0, recentLimit), [players, recentLimit]);

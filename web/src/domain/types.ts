@@ -53,6 +53,8 @@ export interface SyncAction<P = Record<string, unknown>> {
 
 /** A `SyncAction` as persisted in the Local_Store `sync_queue`. */
 export interface StoredSyncAction<P = Record<string, unknown>> extends SyncAction<P> {
+  /** Authenticated account/location/school scope that owns this offline action. */
+  sync_scope?: string;
   status: SyncStatus;
   /** Set when `status === 'rejected'` (Req 5.6). */
   reason?: string;
