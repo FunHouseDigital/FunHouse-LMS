@@ -348,20 +348,30 @@ export async function getCachedRead<T = unknown>(key: string): Promise<CachedRea
   return (await db.get('cached_reads', key)) as CachedRead<T> | undefined;
 }
 
+/** Build an account-scoped key while retaining the legacy key for unscoped callers/tests. */
+function balanceCacheKey(playerId: string, scope?: string | null): string {
+  return scope ? `${scope}:${playerId}` : playerId;
+}
+
 /** Replace the cached entitlement balances for a player (Req 8.5). */
 export async function writeBalances(
   playerId: string,
   balances: BalanceOut[],
   cachedAt: string = new Date().toISOString(),
+  scope?: string | null,
 ): Promise<void> {
   const db = await getDb();
-  await db.put('entitlement_balances', { player_id: playerId, balances, cached_at: cachedAt });
+  const key = balanceCacheKey(playerId, scope);
+  await db.put('entitlement_balances', { player_id: key, balances, cached_at: cachedAt });
 }
 
 /** Read the cached entitlement balances for a player. */
-export async function getBalances(playerId: string): Promise<CachedBalances | undefined> {
+export async function getBalances(
+  playerId: string,
+  scope?: string | null,
+): Promise<CachedBalances | undefined> {
   const db = await getDb();
-  return db.get('entitlement_balances', playerId);
+  return db.get('entitlement_balances', balanceCacheKey(playerId, scope));
 }
 
 // ---- Meta ----

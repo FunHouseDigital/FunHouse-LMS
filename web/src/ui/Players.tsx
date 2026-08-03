@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useReferenceData } from '../state/referenceDataState';
 import {
   getAllLocalRecords,
   getBalances,
@@ -22,13 +23,16 @@ import {
 } from '../domain/roster';
 import type { BalanceOut, PlayerOut } from '../domain/types';
 
-async function loadRosterRows(): Promise<RosterRow[]> {
-  const cached = await getCachedRead<PlayerOut[]>('players');
+async function loadRosterRows(
+  playersCacheKey: string,
+  cacheScope: string | null,
+): Promise<RosterRow[]> {
+  const cached = await getCachedRead<PlayerOut[]>(playersCacheKey);
   const players = cached?.data ?? [];
 
   const balancesByPlayer: Record<string, BalanceOut[]> = {};
   for (const player of players) {
-    const bal = await getBalances(player.id);
+    const bal = await getBalances(player.id, cacheScope);
     if (bal) balancesByPlayer[player.id] = bal.balances;
   }
 
@@ -48,6 +52,7 @@ async function loadRosterRows(): Promise<RosterRow[]> {
 }
 
 export function Players() {
+  const { revision, playersCacheKey, cacheScope } = useReferenceData();
   const [rows, setRows] = useState<RosterRow[]>([]);
   const [search, setSearch] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -55,7 +60,7 @@ export function Players() {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const next = await loadRosterRows();
+      const next = await loadRosterRows(playersCacheKey, cacheScope);
       if (alive) {
         setRows(next);
         setLoaded(true);
@@ -64,7 +69,7 @@ export function Players() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [cacheScope, playersCacheKey, revision]);
 
   const visible = useMemo(() => filterRoster(rows, search), [rows, search]);
 

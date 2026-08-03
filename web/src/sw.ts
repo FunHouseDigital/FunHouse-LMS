@@ -67,9 +67,34 @@ const navigationRoute = new NavigationRoute(createHandlerBoundToURL('index.html'
 registerRoute(navigationRoute);
 
 // ---- Runtime read caching (Req 9.2, 13.5, 16.3) -----------------------------
+
+/**
+ * Workbox normally keys cached API responses only by URL. These reads are
+ * bearer-authorized, so include a one-way token digest in cache keys to prevent
+ * responses from one authenticated session being served to another. The
+ * original request (and Authorization header) is still used for the network.
+ */
+const authenticatedCacheKeyPlugin = {
+  async cacheKeyWillBeUsed({ request }: { request: Request }): Promise<Request> {
+    const authorization = request.headers.get('Authorization');
+    if (!authorization) return request;
+
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(authorization),
+    );
+    const sessionKey = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, '0'),
+    ).join('');
+    const cacheUrl = new URL(request.url);
+    cacheUrl.searchParams.set('__funhouse_session', sessionKey);
+    return new Request(cacheUrl.toString(), request);
+  },
+};
+
 function buildStrategy(rule: RuntimeCacheRule): Strategy {
   const cacheableResponse = new CacheableResponsePlugin({ statuses: [0, 200] });
-  const commonPlugins = [cacheableResponse];
+  const commonPlugins = [authenticatedCacheKeyPlugin, cacheableResponse];
 
   const strategyByName: Record<CacheStrategyName, () => Strategy> = {
     StaleWhileRevalidate: () =>

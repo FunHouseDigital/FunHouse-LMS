@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServices } from '../state/servicesState';
+import { useReferenceData } from '../state/referenceDataState';
 import { getAllLocalRecords, getCachedRead } from '../store/localStore';
 import {
   MAX_SUBSCRIPTION_MEMBERS,
@@ -43,6 +44,7 @@ function matchProduct(products: ProductOut[], kind: SellKind): ProductOut | unde
 
 export function Sell() {
   const { commit } = useServices();
+  const { revision, playersCacheKey, productsCacheKey } = useReferenceData();
   const [products, setProducts] = useState<ProductOut[]>([]);
   const [players, setPlayers] = useState<PlayerChoice[]>([]);
   const [kind, setKind] = useState<SellKind>('pay_per_use');
@@ -54,8 +56,8 @@ export function Sell() {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const cachedProducts = await getCachedRead<ProductOut[]>('products');
-      const cachedPlayers = await getCachedRead<PlayerOut[]>('players');
+      const cachedProducts = await getCachedRead<ProductOut[]>(productsCacheKey);
+      const cachedPlayers = await getCachedRead<PlayerOut[]>(playersCacheKey);
       const roster: PlayerChoice[] = (cachedPlayers?.data ?? []).map((p) => ({
         id: p.id,
         name: playerName(p),
@@ -72,7 +74,7 @@ export function Sell() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [playersCacheKey, productsCacheKey, revision]);
 
   const product = useMemo(() => matchProduct(products, kind), [products, kind]);
 
