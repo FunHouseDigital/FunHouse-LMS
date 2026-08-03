@@ -64,7 +64,8 @@ function latestTimestamp(...timestamps: Array<string | undefined>): string | nul
 export function sessionScopeKey(session: Session | null): string | null {
   if (!session) return null;
   const claims = decodeJwtPayload(session.access_token);
-  const subject = typeof claims?.sub === 'string' ? claims.sub : 'unknown-user';
+  const subject = typeof claims?.sub === 'string' ? claims.sub.trim() : '';
+  if (subject === '') return null;
   const school = typeof claims?.school_id === 'string' ? claims.school_id : 'no-school';
   return ['v1', subject, session.role, session.location_id ?? 'no-location', school]
     .map(encodeURIComponent)

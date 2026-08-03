@@ -12,14 +12,19 @@
  */
 import { useEffect, useState } from 'react';
 import { useAuth } from '../state/authState';
+import { useReferenceData } from '../state/referenceDataState';
 import { getCachedRead, writeCachedRead } from '../store/localStore';
-import { buildAlertRows, type AlertRow } from '../domain/alerts';
+import { alertsCacheKey, buildAlertRows, type AlertRow } from '../domain/alerts';
 import type { Alert } from '../domain/types';
 
-/** The `cached_reads` key for the alerts list (design.md Local_Store schema). */
-const ALERTS_CACHE_KEY = 'alerts';
-
 type LoadState = 'loading' | 'ready' | 'empty';
+
+interface AlertsView {
+  scope: string | null;
+  rows: AlertRow[];
+  cached: boolean;
+  state: LoadState;
+}
 
 function isOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -27,52 +32,80 @@ function isOnline(): boolean {
 
 export function Alerts() {
   const { client } = useAuth();
-  const [rows, setRows] = useState<AlertRow[]>([]);
-  const [cached, setCached] = useState(false);
-  const [state, setState] = useState<LoadState>('loading');
+  const { cacheScope } = useReferenceData();
+  const [view, setView] = useState<AlertsView>({
+    scope: null,
+    rows: [],
+    cached: false,
+    state: 'loading',
+  });
 
   useEffect(() => {
+    if (!cacheScope) {
+      setView({ scope: null, rows: [], cached: false, state: 'empty' });
+      return undefined;
+    }
+
     let alive = true;
+    const requestScope = cacheScope;
+    const cacheKey = alertsCacheKey(requestScope);
+
+    function show(alerts: Alert[], fromCache: boolean): void {
+      if (!alive) return;
+      setView({
+        scope: requestScope,
+        rows: buildAlertRows(alerts),
+        cached: fromCache,
+        state: alerts.length === 0 ? 'empty' : 'ready',
+      });
+    }
 
     async function readFromCache(): Promise<boolean> {
-      const hit = await getCachedRead<Alert[]>(ALERTS_CACHE_KEY);
+      const hit = await getCachedRead<Alert[]>(cacheKey);
       if (!alive) return true;
       if (hit) {
-        setRows(buildAlertRows(hit.data));
-        setCached(true);
-        setState(hit.data.length === 0 ? 'empty' : 'ready');
+        show(hit.data, true);
         return true;
       }
       return false;
     }
 
     void (async () => {
-      // Offline: render the last cached alerts with the cached indicator (Req 16.3).
+      // Offline: render only this account's cached alerts (Req 16.3).
       if (!isOnline()) {
         const found = await readFromCache();
-        if (alive && !found) setState('empty');
+        if (alive && !found) {
+          setView({ scope: requestScope, rows: [], cached: false, state: 'empty' });
+        }
         return;
       }
 
       try {
         const alerts = await client.getAlerts();
-        await writeCachedRead(ALERTS_CACHE_KEY, alerts);
-        if (!alive) return;
-        // Display exactly as received — no recomputation/filtering (Req 16.4).
-        setRows(buildAlertRows(alerts));
-        setCached(false);
-        setState(alerts.length === 0 ? 'empty' : 'ready');
+        // A replaced account may finish this write, but only under the scope
+        // captured when its request began. It can never populate the new scope.
+        await writeCachedRead(cacheKey, alerts);
+        show(alerts, false);
       } catch {
-        // Network failure → fall back to the last cached alerts (Req 16.3).
+        // Network failure → fall back only to this account's cached alerts.
         const found = await readFromCache();
-        if (alive && !found) setState('empty');
+        if (alive && !found) {
+          setView({ scope: requestScope, rows: [], cached: false, state: 'empty' });
+        }
       }
     })();
 
     return () => {
       alive = false;
     };
-  }, [client]);
+  }, [cacheScope, client]);
+
+  // Do not render the prior account's state during the render/effect boundary.
+  const visible: AlertsView =
+    cacheScope && view.scope === cacheScope
+      ? view
+      : { scope: cacheScope, rows: [], cached: false, state: cacheScope ? 'loading' : 'empty' };
+  const { rows, cached, state } = visible;
 
   return (
     <section aria-label="Alerts" data-screen-body="alerts">

@@ -7,8 +7,15 @@
  * **no filtering, sorting, or rule recomputation** — alerts are shown exactly as
  * the Container_API returned them (Req 16.4, Property 20). Alert rules are
  * computed server-side; the client never re-derives them.
+ * The cache key helper requires an authenticated account scope so offline alerts
+ * cannot be replayed across accounts on a shared device.
  */
 import type { Alert } from './types';
+
+/** Account-owned `cached_reads` key for the server-computed alerts list. */
+export function alertsCacheKey(scope: string): string {
+  return `alerts:${scope}`;
+}
 
 /** A single alert display row (Req 16.1). */
 export interface AlertRow {
