@@ -44,7 +44,7 @@ function matchProduct(products: ProductOut[], kind: SellKind): ProductOut | unde
 
 export function Sell() {
   const { commit } = useServices();
-  const { revision, playersCacheKey, productsCacheKey } = useReferenceData();
+  const { revision, playersCacheKey, productsCacheKey, cacheScope } = useReferenceData();
   const [products, setProducts] = useState<ProductOut[]>([]);
   const [players, setPlayers] = useState<PlayerChoice[]>([]);
   const [kind, setKind] = useState<SellKind>('pay_per_use');
@@ -62,7 +62,7 @@ export function Sell() {
         id: p.id,
         name: playerName(p),
       }));
-      const local = (await getAllLocalRecords('players')).map((r) => ({
+      const local = (await getAllLocalRecords('players', cacheScope)).map((r) => ({
         id: String(r.local_id),
         name: String(r.name ?? 'New player'),
       }));
@@ -74,7 +74,7 @@ export function Sell() {
     return () => {
       alive = false;
     };
-  }, [playersCacheKey, productsCacheKey, revision]);
+  }, [cacheScope, playersCacheKey, productsCacheKey, revision]);
 
   const product = useMemo(() => matchProduct(products, kind), [products, kind]);
 

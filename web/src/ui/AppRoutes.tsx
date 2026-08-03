@@ -13,6 +13,7 @@ import { Login } from './Login';
 import { PlaceholderScreen } from './PlaceholderScreen';
 import { LogSession } from './LogSession';
 import { Players } from './Players';
+import { Learners } from './Learners';
 import { PlayerDetail } from './PlayerDetail';
 import { Today } from './Today';
 import { Sell } from './Sell';
@@ -35,6 +36,8 @@ function ScreenBody({ id, label }: { id: ScreenId; label: string }) {
       return <LogSession />;
     case 'players':
       return <Players />;
+    case 'learners':
+      return <Learners />;
     case 'today':
       return <Today />;
     case 'sell':

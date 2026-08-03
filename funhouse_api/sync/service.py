@@ -67,6 +67,12 @@ STATUS_APPLIED = "applied"
 STATUS_SKIPPED = "skipped"
 STATUS_REJECTED = "rejected"
 
+_FACILITATOR_ENTITIES = {
+    mapping.ENTITY_SESSION,
+    mapping.ENTITY_ATTENDANCE,
+    mapping.ENTITY_STUDENT_METRICS,
+}
+
 
 class SyncAuditError(Exception):
     """Raised when a ``sync_log`` append fails, to force a write rollback (Req 14.6)."""
@@ -183,6 +189,19 @@ def _resolve_entitlement_scope(conn: Any, entitlement_id: Any) -> tuple[Any, Any
     return row[0], row[1]
 
 
+def _resolve_session_scope(conn: Any, session_id: Any) -> tuple[Any, Any, Any]:
+    """Return ``(location_id, school_id, player_id)`` for a session, or raise."""
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT location_id, school_id, player_id FROM sessions WHERE id = %s",
+            (session_id,),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise LookupError(f"session {session_id} not found")
+    return row[0], row[1], row[2]
+
+
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
@@ -235,6 +254,10 @@ def _apply_action(
 ) -> ActionResult:
     """Dispatch a single action to its entity handler (design mapping)."""
     entity = action.entity
+    if scope.role == "facilitator" and entity not in _FACILITATOR_ENTITIES:
+        return ActionResult(
+            action.client_id, entity, STATUS_REJECTED, reason="forbidden_entity"
+        )
     if entity not in mapping.VALID_ENTITIES:
         return ActionResult(
             action.client_id, entity, STATUS_REJECTED, reason="unknown_entity"
@@ -243,6 +266,15 @@ def _apply_action(
     # POPIA filter first so prohibited fields never reach any code path (Req 14.1).
     clean, _dropped = filter_payload(action.payload or {})
     created_at = _aware(action.created_at)
+
+    if (
+        scope.role == "facilitator"
+        and entity == mapping.ENTITY_SESSION
+        and clean.get("session_type") not in {"lesson", "kit", "esports"}
+    ):
+        return ActionResult(
+            action.client_id, entity, STATUS_REJECTED, reason="forbidden_session_type"
+        )
 
     if entity == mapping.ENTITY_PLAYER:
         return _apply_player(conn, scope, action, clean, created_at, logged_by=logged_by)
@@ -581,6 +613,28 @@ def _apply_natural_key(
     location_id, player_school = _resolve_player_scope(conn, player_id)
     scope.assert_can_write(location_id, player_school)  # AuthzError -> rejected
 
+    if entity == mapping.ENTITY_ATTENDANCE:
+        session_id = normalized.get("session_id")
+        if scope.role == "facilitator" and session_id is None:
+            return ActionResult(
+                action.client_id,
+                entity,
+                STATUS_REJECTED,
+                reason="session_required",
+            )
+        if session_id is not None:
+            session_location, session_school, session_player = _resolve_session_scope(
+                conn, session_id
+            )
+            scope.assert_can_write(session_location, session_school)
+            if str(session_player) != str(player_id):
+                return ActionResult(
+                    action.client_id,
+                    entity,
+                    STATUS_REJECTED,
+                    reason="session_player_mismatch",
+                )
+
     if entity == mapping.ENTITY_PAYMENT and normalized.get("amount_cents") is None:
         return ActionResult(
             action.client_id, entity, STATUS_REJECTED, reason="bad_amount"
@@ -599,16 +653,20 @@ def _apply_natural_key(
                 action.client_id, entity, STATUS_REJECTED, reason="value_required"
             )
 
-    natural_key = mapping.compute_sync_natural_key(entity, normalized)
-
     # A session/attendance inherits the player's school when none supplied.
+    # Validate the effective value before keying or persistence so a facilitator
+    # cannot authorize via the player and then supply a different school_id.
     effective_school = normalized.get("school_id")
     if effective_school is None and entity in (
         mapping.ENTITY_SESSION, mapping.ENTITY_ATTENDANCE
     ):
         effective_school = player_school
+    if entity in (mapping.ENTITY_SESSION, mapping.ENTITY_ATTENDANCE):
+        scope.assert_can_write(location_id, effective_school)
     normalized["school_id"] = effective_school
     normalized["logged_by"] = logged_by
+
+    natural_key = mapping.compute_sync_natural_key(entity, normalized)
 
     with conn.cursor() as cursor:
         cursor.execute(

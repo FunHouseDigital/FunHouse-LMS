@@ -110,6 +110,8 @@ def register_player(
     conn: Any = Depends(get_connection),
 ) -> PlayerOutModel:
     """Register (or resolve) a player and append its consents (Req 6.2-6.5)."""
+    if scope.role not in {"founder", "manager"}:
+        raise HTTPException(status_code=403, detail="Forbidden")
     consents = [
         service.ConsentInput(
             consent_type=c.consent_type,
@@ -144,6 +146,8 @@ def player_history(
     conn: Any = Depends(get_connection),
 ) -> PlayerHistoryModel:
     """Return the player's in-scope history (Req 6.7, 6.8, 8.7)."""
+    if scope.role not in {"founder", "manager"}:
+        raise HTTPException(status_code=403, detail="Forbidden")
     history = service.player_history(conn, scope, str(player_id))
     return PlayerHistoryModel(
         player_id=player_id,

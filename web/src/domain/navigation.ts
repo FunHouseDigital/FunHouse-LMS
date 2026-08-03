@@ -19,6 +19,7 @@ export type ScreenId =
   | 'login'
   | 'log-session'
   | 'players'
+  | 'learners'
   | 'today'
   | 'sell'
   | 'revenue'
@@ -56,10 +57,18 @@ export const FOUNDER_SCREENS: readonly NavScreen[] = [
   { id: 'alerts', path: '/alerts', label: 'Alerts' },
 ];
 
+/** Facilitator screens, in nav order. Attendance is the facilitator home. */
+export const FACILITATOR_SCREENS: readonly NavScreen[] = [
+  { id: 'attendance', path: '/attendance', label: 'Attendance & Sessions' },
+  { id: 'learners', path: '/learners', label: 'Learners' },
+  { id: 'metrics', path: '/metrics', label: 'Metrics Entry' },
+];
+
 /** Every protected screen (used for exhaustive route generation and tests). */
 export const ALL_PROTECTED_SCREENS: readonly NavScreen[] = [
   ...MANAGER_SCREENS,
   ...FOUNDER_SCREENS,
+  FACILITATOR_SCREENS[1],
 ];
 
 /**
@@ -77,6 +86,7 @@ export function navScreensFor(state: NavAuthState): NavScreen[] {
   }
   if (state.role === 'manager') return [...MANAGER_SCREENS];
   if (state.role === 'founder') return [...FOUNDER_SCREENS];
+  if (state.role === 'facilitator') return [...FACILITATOR_SCREENS];
   return [];
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import {
   ALL_PROTECTED_SCREENS,
+  FACILITATOR_SCREENS,
   FOUNDER_SCREENS,
   LOGIN_SCREEN,
   MANAGER_SCREENS,
@@ -34,6 +35,7 @@ function expectedIds(state: NavAuthState): Set<ScreenId> {
   if (!state.authenticated || state.role === null) return new Set<ScreenId>(['login']);
   if (state.role === 'manager') return new Set(MANAGER_SCREENS.map((s) => s.id));
   if (state.role === 'founder') return new Set(FOUNDER_SCREENS.map((s) => s.id));
+  if (state.role === 'facilitator') return new Set(FACILITATOR_SCREENS.map((s) => s.id));
   return new Set<ScreenId>();
 }
 

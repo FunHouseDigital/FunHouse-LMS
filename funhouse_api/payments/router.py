@@ -66,6 +66,8 @@ def record_payment(
     conn: Any = Depends(get_connection),
 ) -> PaymentOutModel:
     """Record a payment against a player within scope (Req 10.1, 10.2, 10.4)."""
+    if scope.role not in {"founder", "manager"}:
+        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         payment = service.record_payment(
             conn,
@@ -97,6 +99,8 @@ def list_products(
     conn: Any = Depends(get_connection),
 ) -> list[ProductOutModel]:
     """Return the seeded product catalog within scope (Req 10.3)."""
+    if scope.role not in {"founder", "manager"}:
+        raise HTTPException(status_code=403, detail="Forbidden")
     return [
         ProductOutModel(
             id=p.id,

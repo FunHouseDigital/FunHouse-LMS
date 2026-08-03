@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
 from funhouse_api.alerts import engine
@@ -36,6 +37,8 @@ def list_alerts(
     conn: Any = Depends(get_connection),
 ) -> list[AlertModel]:
     """Return deterministic operational alerts within scope (Req 12)."""
+    if scope.role not in {"founder", "manager"}:
+        raise HTTPException(status_code=403, detail="Forbidden")
     found = engine.alerts(
         conn,
         scope,

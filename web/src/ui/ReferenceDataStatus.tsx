@@ -14,6 +14,7 @@ export function ReferenceDataStatus() {
     status,
     playersAvailable,
     productsAvailable,
+    productsRequired,
     lastRefreshedAt,
     refresh,
   } = useReferenceData();
@@ -21,45 +22,39 @@ export function ReferenceDataStatus() {
   if (!isAuthenticated || status === 'idle') return null;
 
   const refreshedLabel = formatTimestamp(lastRefreshedAt);
+  const allRequiredAvailable = playersAvailable && (!productsRequired || productsAvailable);
+  const dataLabel = productsRequired ? 'players and products' : 'learners';
 
   return (
-    <aside aria-label="Player and product data status" data-reference-data-status={status}>
+    <aside aria-label="Reference data status" data-reference-data-status={status}>
       {status === 'loading' && (
         <p role="status">
-          {playersAvailable || productsAvailable
-            ? 'Refreshing players and products… Saved data remains available.'
-            : 'Loading players and products…'}
+          {playersAvailable || (productsRequired && productsAvailable)
+            ? `Refreshing ${dataLabel}… Saved data remains available.`
+            : `Loading ${dataLabel}…`}
         </p>
       )}
 
       {status === 'ready' && (
         <p role="status">
-          Players and products are available offline
+          {dataLabel[0].toUpperCase() + dataLabel.slice(1)} are available offline
           {refreshedLabel ? ` — updated ${refreshedLabel}` : ''}.
         </p>
       )}
 
       {status === 'offline' && (
         <p role="status">
-          {playersAvailable && productsAvailable
-            ? 'You are offline. Using saved players and products.'
-            : playersAvailable
-              ? 'You are offline. Saved players are available, but products have not been downloaded.'
-              : productsAvailable
-                ? 'You are offline. Saved products are available, but players have not been downloaded.'
-                : 'You are offline. Connect to the internet to load players and products.'}
+          {allRequiredAvailable
+            ? `You are offline. Using saved ${dataLabel}.`
+            : `You are offline. Connect to the internet to load ${dataLabel}.`}
         </p>
       )}
 
       {status === 'error' && (
         <p role="alert">
-          {playersAvailable && productsAvailable
-            ? 'The latest data could not be confirmed. Saved players and products are still available.'
-            : playersAvailable
-              ? 'Products could not be loaded. Saved players are still available.'
-              : productsAvailable
-                ? 'Players could not be loaded. Saved products are still available.'
-                : 'Players and products could not be loaded. Check your connection and try again.'}
+          {allRequiredAvailable
+            ? `The latest ${dataLabel} could not be confirmed. Saved data is still available.`
+            : `${dataLabel[0].toUpperCase() + dataLabel.slice(1)} could not be loaded. Check your connection and try again.`}
         </p>
       )}
 

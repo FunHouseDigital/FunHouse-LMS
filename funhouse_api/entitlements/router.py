@@ -158,6 +158,8 @@ def draw_entitlement(
     conn: Any = Depends(get_connection),
 ) -> DrawOut:
     """Decrement units and record the digital signature (Req 8.2-8.5, 8.8, 8.9)."""
+    if scope.role not in _CREATE_ROLES:
+        raise HTTPException(status_code=403, detail="Forbidden")
     location_id, school_id = _load_entitlement_scope(conn, entitlement_id)
     try:
         scope.assert_can_write(location_id, school_id)
@@ -191,6 +193,8 @@ def player_entitlements(
     conn: Any = Depends(get_connection),
 ) -> list[BalanceOut]:
     """Return the player's active entitlement balances within scope (Req 8.6)."""
+    if scope.role not in _CREATE_ROLES:
+        raise HTTPException(status_code=403, detail="Forbidden")
     balances = engine.balance(conn, str(player_id), scope)
     return [
         BalanceOut(

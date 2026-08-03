@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServices } from '../state/servicesState';
+import { useAuth } from '../state/authState';
 import { useReferenceData } from '../state/referenceDataState';
 import { getAllLocalRecords, getCachedRead } from '../store/localStore';
 import {
@@ -38,7 +39,8 @@ const TYPE_LABELS: Record<SchoolSessionType, string> = {
 
 export function Attendance() {
   const { commit } = useServices();
-  const { revision, playersCacheKey } = useReferenceData();
+  const { role } = useAuth();
+  const { revision, playersCacheKey, cacheScope } = useReferenceData();
   const [sessionType, setSessionType] = useState<SchoolSessionType>('lesson');
   const [reference, setReference] = useState('');
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -49,23 +51,31 @@ export function Attendance() {
     void (async () => {
       const cached = await getCachedRead<PlayerOut[]>(playersCacheKey);
       const server = (cached?.data ?? []).map((p) => ({ id: p.id, name: playerName(p), present: false }));
-      const local = (await getAllLocalRecords('players')).map((r) => ({
-        id: String(r.local_id),
-        name: String(r.name ?? 'New player'),
-        present: false,
-      }));
+      const local = role === 'facilitator'
+        ? []
+        : (await getAllLocalRecords('players', cacheScope)).map((r) => ({
+            id: String(r.local_id),
+            name: String(r.name ?? 'New player'),
+            present: false,
+          }));
       if (alive) setRoster([...server, ...local.filter((l) => !server.some((s) => s.id === l.id))]);
     })();
     return () => {
       alive = false;
     };
-  }, [playersCacheKey, revision]);
+  }, [cacheScope, playersCacheKey, revision, role]);
 
   const toggle = useCallback((id: string) => {
     setRoster((prev) => prev.map((m) => (m.id === id ? { ...m, present: !m.present } : m)));
   }, []);
 
-  const canConfirm = useMemo(() => canConfirmAttendance({ sessionType }), [sessionType]);
+  const canConfirm = useMemo(
+    () => canConfirmAttendance({ sessionType, roster: roster.map((member) => ({
+      playerId: member.id,
+      present: member.present,
+    })) }),
+    [roster, sessionType],
+  );
 
   const onConfirm = useCallback(async () => {
     const attendees: RosterAttendee[] = roster.map((m) => ({ playerId: m.id, present: m.present }));

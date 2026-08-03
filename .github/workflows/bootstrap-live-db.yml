@@ -21,6 +21,7 @@ on:
         options:
           - Aya
           - Loyiso
+          - Facilitator
 
 permissions:
   contents: read
@@ -92,17 +93,31 @@ jobs:
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
           RAW_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
+          GENERAL_BOOTSTRAP_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
+          FACILITATOR_BOOTSTRAP_PASSWORD: ${{ secrets.FACILITATOR_BOOTSTRAP_PASSWORD }}
         run: |
           python - <<'PY'
           import os
           import re
+          import uuid
 
+          is_facilitator = os.environ["BOOTSTRAP_USER_NAME"] == "Facilitator"
+          password_name = (
+              "FACILITATOR_BOOTSTRAP_PASSWORD"
+              if is_facilitator
+              else "BOOTSTRAP_USER_PASSWORD"
+          )
+          selected_password = os.environ.get(
+              "FACILITATOR_BOOTSTRAP_PASSWORD"
+              if is_facilitator
+              else "GENERAL_BOOTSTRAP_PASSWORD",
+              "",
+          )
           required = {
               "SUPABASE_DB_HOST": os.environ.get("RAW_DB_HOST", ""),
               "SUPABASE_DB_USER": os.environ.get("RAW_DB_USER", ""),
               "SUPABASE_DB_PASSWORD": os.environ.get("DB_PASSWORD", ""),
-              "BOOTSTRAP_USER_PASSWORD": os.environ.get("BOOTSTRAP_USER_PASSWORD", ""),
+              password_name: selected_password,
           }
           missing = [name for name, value in required.items() if not value]
           if missing:
@@ -129,10 +144,17 @@ jobs:
           # values, so mask them before any downstream command can log them.
           print(f"::add-mask::{host}")
           print(f"::add-mask::{user}")
+          print(f"::add-mask::{selected_password}")
+          delimiter = f"FUNHOUSE_PASSWORD_{uuid.uuid4().hex}"
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as environment:
               environment.write(f"DB_HOST={host}\n")
               environment.write(f"DB_USER={user}\n")
-          print("Connection identifiers normalized and validated; no values were logged.")
+              environment.write(
+                  f"BOOTSTRAP_USER_PASSWORD<<{delimiter}\n"
+                  f"{selected_password}\n"
+                  f"{delimiter}\n"
+              )
+          print("Connection identifiers and bootstrap credential selection validated; no values were logged.")
           PY
 
       - name: Check whether schema is already current
@@ -246,12 +268,9 @@ jobs:
           PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
           PGCONNECT_TIMEOUT: "15"
           PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
-          BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
         run: python -m funhouse_pipeline.db.bootstrap_user
 
       - name: Verify live login
-        env:
-          BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
         run: |
           python - <<'PY'
           import json
