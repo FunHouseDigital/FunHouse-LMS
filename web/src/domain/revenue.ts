@@ -28,11 +28,10 @@ export const REVENUE_PERIODS: readonly RevenuePeriod[] = ['daily', 'weekly', 'mo
 /** Stable key for the "all locations" selection (blank location input). */
 export const ALL_LOCATIONS = 'all';
 
-/**
- * The `cached_reads` key for the default scoped summary used by the D3 fallback
- * (the summary the endpoint returns with no period/location params).
- */
-export const DEFAULT_REVENUE_CACHE_KEY = 'revenue:summary:default:default';
+/** Build the account-owned key for the default summary used by the D3 fallback. */
+export function defaultRevenueCacheKey(scope: string): string {
+  return `revenue:${scope}:summary:default:default`;
+}
 
 /** A single revenue stream display row. */
 export interface RevenueStreamRow {
@@ -43,12 +42,17 @@ export interface RevenueStreamRow {
 }
 
 /**
- * The `cached_reads` key for a `(period, location)` selection (Req 13.5). A
- * blank location maps to {@link ALL_LOCATIONS} so the key is always stable.
+ * The account-owned `cached_reads` key for a `(period, location)` selection
+ * (Req 13.5). A blank location maps to {@link ALL_LOCATIONS} so the key is
+ * always stable.
  */
-export function revenueCacheKey(period: RevenuePeriod, location: string): string {
+export function revenueCacheKey(
+  scope: string,
+  period: RevenuePeriod,
+  location: string,
+): string {
   const loc = location.trim() === '' ? ALL_LOCATIONS : location.trim();
-  return `revenue:summary:${period}:${loc}`;
+  return `revenue:${scope}:summary:${period}:${loc}`;
 }
 
 /** Convert integer cents to a Rand display string (e.g. `3050` → `"R30.50"`). */

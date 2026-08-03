@@ -3,11 +3,13 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../state/authState';
+import { ReferenceDataProvider } from '../state/referenceDataState';
+import { AuthManager } from '../domain/authManager';
 import { RevenueDashboard } from './RevenueDashboard';
 import { DB_NAME, closeDb, getCachedRead, writeCachedRead } from '../store/localStore';
-import { DEFAULT_REVENUE_CACHE_KEY, revenueCacheKey } from '../domain/revenue';
+import { defaultRevenueCacheKey, revenueCacheKey } from '../domain/revenue';
 import type { ContainerApiClient, RevenueSummaryParams } from '../api/client';
-import type { RevenueSummary } from '../domain/types';
+import type { LoginResponse, RevenueSummary } from '../domain/types';
 
 async function resetDb(): Promise<void> {
   await closeDb();
@@ -21,6 +23,29 @@ async function resetDb(): Promise<void> {
 
 function setOnline(value: boolean): void {
   Object.defineProperty(navigator, 'onLine', { configurable: true, value });
+}
+
+const CACHE_SCOPE = 'v1:founder-1:founder:loc-1:no-school';
+
+function makeJwt(claims: Record<string, unknown>): string {
+  const b64url = (obj: unknown) =>
+    btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(claims)}.sig`;
+}
+
+function loginResponse(): LoginResponse {
+  const expiresAt = Date.now() + 60 * 60 * 1000;
+  return {
+    access_token: makeJwt({
+      sub: 'founder-1',
+      role: 'founder',
+      location_id: 'loc-1',
+      iat: 1,
+      exp: Math.floor(expiresAt / 1000),
+    }),
+    token_type: 'bearer',
+    expires_at: new Date(expiresAt).toISOString(),
+  };
 }
 
 const MONTHLY: RevenueSummary = {
@@ -54,15 +79,23 @@ function makeClient(opts: FakeClientOpts): ContainerApiClient {
     const byPeriod = opts.byPeriod ?? {};
     return byPeriod[params.period ?? 'monthly'] ?? MONTHLY;
   });
-  return { getRevenueSummary } as unknown as ContainerApiClient;
+  return {
+    getRevenueSummary,
+    getPlayers: vi.fn(async () => []),
+    getProducts: vi.fn(async () => []),
+  } as unknown as ContainerApiClient;
 }
 
-function renderDashboard(client: ContainerApiClient) {
+async function renderDashboard(client: ContainerApiClient) {
+  const authManager = new AuthManager({ loginFn: async () => loginResponse() });
+  await authManager.login('founder', 'secret');
   return render(
-    <AuthProvider client={client}>
-      <MemoryRouter>
-        <RevenueDashboard />
-      </MemoryRouter>
+    <AuthProvider authManager={authManager} client={client}>
+      <ReferenceDataProvider>
+        <MemoryRouter>
+          <RevenueDashboard />
+        </MemoryRouter>
+      </ReferenceDataProvider>
     </AuthProvider>,
   );
 }
@@ -80,7 +113,7 @@ describe('Revenue Dashboard (Req 13)', () => {
   it('renders the three revenue streams in Rand (Req 13.1)', async () => {
     // Distinct daily vs monthly ⇒ params are treated as supported.
     const client = makeClient({ byPeriod: { daily: DAILY, weekly: WEEKLY, monthly: MONTHLY } });
-    renderDashboard(client);
+    await renderDashboard(client);
 
     const list = await screen.findByRole('list', { name: /revenue streams/i });
 
@@ -104,7 +137,7 @@ describe('Revenue Dashboard (Req 13)', () => {
         monthly: { pay_per_use_cents: 100, subscription_cents: 200, school_contracts_cents: 0 },
       },
     });
-    renderDashboard(client);
+    await renderDashboard(client);
 
     const list = await screen.findByRole('list', { name: /revenue streams/i });
     const schoolRow = list.querySelector('[data-stream="school_contract"]');
@@ -115,11 +148,11 @@ describe('Revenue Dashboard (Req 13)', () => {
 
   it('renders the last cached summary with a cached indicator when offline (Req 13.5)', async () => {
     // Seed the cache for the default (monthly, all-locations) selection.
-    await writeCachedRead(revenueCacheKey('monthly', ''), MONTHLY);
+    await writeCachedRead(revenueCacheKey(CACHE_SCOPE, 'monthly', ''), MONTHLY);
     setOnline(false);
 
     const client = makeClient({ fail: true }); // must never be reached offline
-    renderDashboard(client);
+    await renderDashboard(client);
 
     expect(await screen.findByText(/showing cached data/i)).toBeInTheDocument();
     const list = await screen.findByRole('list', { name: /revenue streams/i });
@@ -133,7 +166,7 @@ describe('Revenue Dashboard (Req 13)', () => {
       onCall: (p) => calls.push(p),
     });
     const user = userEvent.setup();
-    renderDashboard(client);
+    await renderDashboard(client);
 
     // Wait for the initial monthly render.
     const list = await screen.findByRole('list', { name: /revenue streams/i });
@@ -154,14 +187,14 @@ describe('Revenue Dashboard (Req 13)', () => {
 
     // Each (period, location) result is cached under its own key (Req 13.5).
     await waitFor(async () => {
-      expect(await getCachedRead(revenueCacheKey('daily', 'loc-9'))).toBeTruthy();
+      expect(await getCachedRead(revenueCacheKey(CACHE_SCOPE, 'daily', 'loc-9'))).toBeTruthy();
     });
   });
 
   it('D3 fallback: disables filters when the endpoint ignores params', async () => {
     // A fixed summary regardless of params ⇒ probe sees daily == monthly ⇒ ignored.
     const client = makeClient({ fixed: MONTHLY });
-    renderDashboard(client);
+    await renderDashboard(client);
 
     expect(await screen.findByText(/filters unavailable/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Period')).toBeDisabled();
@@ -173,14 +206,14 @@ describe('Revenue Dashboard (Req 13)', () => {
 
     // Cached under the default fallback key.
     await waitFor(async () => {
-      expect(await getCachedRead(DEFAULT_REVENUE_CACHE_KEY)).toBeTruthy();
+      expect(await getCachedRead(defaultRevenueCacheKey(CACHE_SCOPE))).toBeTruthy();
     });
   });
 
   it('D3 fallback: on fetch failure falls back to the cached default summary', async () => {
-    await writeCachedRead(DEFAULT_REVENUE_CACHE_KEY, MONTHLY);
+    await writeCachedRead(defaultRevenueCacheKey(CACHE_SCOPE), MONTHLY);
     const client = makeClient({ fail: true });
-    renderDashboard(client);
+    await renderDashboard(client);
 
     expect(await screen.findByText(/showing cached data/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Period')).toBeDisabled();
