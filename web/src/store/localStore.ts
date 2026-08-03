@@ -12,7 +12,13 @@
  * "IndexedDB store definitions") exactly.
  */
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb';
-import type { BalanceOut, StoredSyncAction, SyncAction, SyncStatus } from '../domain/types';
+import type {
+  BalanceOut,
+  EncryptedField,
+  StoredSyncAction,
+  SyncAction,
+  SyncStatus,
+} from '../domain/types';
 
 export const DB_NAME = 'funhouse-revenue';
 export const DB_VERSION = 1;
@@ -39,6 +45,8 @@ export interface LocalRecord {
   name?: string;
   day?: string;
   session_id?: string;
+  /** AES-GCM envelope containing this record's personal fields. */
+  enc?: EncryptedField;
   /** Authenticated account/location/school scope that owns this local mirror. */
   sync_scope?: string;
   [key: string]: unknown;

@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServices } from '../state/servicesState';
 import { useReferenceData } from '../state/referenceDataState';
-import { getAllLocalRecords, getCachedRead } from '../store/localStore';
+import { getCachedRead } from '../store/localStore';
 import {
   MAX_SUBSCRIPTION_MEMBERS,
   SUBSCRIPTION_PRICE_CENTS,
@@ -21,13 +21,8 @@ import {
   type SellInput,
   type SellKind,
 } from '../domain/captures/sell';
-import { playerName } from '../domain/roster';
-import type { PlayerOut, ProductOut } from '../domain/types';
-
-interface PlayerChoice {
-  id: string;
-  name: string;
-}
+import type { ProductOut } from '../domain/types';
+import { useKnownPlayers } from './useKnownPlayers';
 
 const KIND_LABELS: Record<SellKind, string> = {
   pay_per_use: 'Pay per use',
@@ -44,9 +39,9 @@ function matchProduct(products: ProductOut[], kind: SellKind): ProductOut | unde
 
 export function Sell() {
   const { commit } = useServices();
-  const { revision, playersCacheKey, productsCacheKey, cacheScope } = useReferenceData();
+  const { revision, productsCacheKey } = useReferenceData();
+  const players = useKnownPlayers();
   const [products, setProducts] = useState<ProductOut[]>([]);
-  const [players, setPlayers] = useState<PlayerChoice[]>([]);
   const [kind, setKind] = useState<SellKind>('pay_per_use');
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [members, setMembers] = useState<string[]>([]);
@@ -57,24 +52,12 @@ export function Sell() {
     let alive = true;
     void (async () => {
       const cachedProducts = await getCachedRead<ProductOut[]>(productsCacheKey);
-      const cachedPlayers = await getCachedRead<PlayerOut[]>(playersCacheKey);
-      const roster: PlayerChoice[] = (cachedPlayers?.data ?? []).map((p) => ({
-        id: p.id,
-        name: playerName(p),
-      }));
-      const local = (await getAllLocalRecords('players', cacheScope)).map((r) => ({
-        id: String(r.local_id),
-        name: String(r.name ?? 'New player'),
-      }));
-      if (alive) {
-        setProducts(cachedProducts?.data ?? []);
-        setPlayers([...roster, ...local.filter((l) => !roster.some((r) => r.id === l.id))]);
-      }
+      if (alive) setProducts(cachedProducts?.data ?? []);
     })();
     return () => {
       alive = false;
     };
-  }, [cacheScope, playersCacheKey, productsCacheKey, revision]);
+  }, [productsCacheKey, revision]);
 
   const product = useMemo(() => matchProduct(products, kind), [products, kind]);
 

@@ -17,7 +17,10 @@ import {
   writeLocalRecord,
   type LocalRecord,
 } from '../store/localStore';
-import type { SyncScheduler } from '../domain/syncEngine';
+import {
+  notifyPlayerDirectoryChanged,
+  type SyncScheduler,
+} from '../domain/syncEngine';
 
 export interface CommitDeps {
   /** The Sync_Engine scheduler; `onEnqueue` registers/flushes (Req 5.1, 5.2). */
@@ -53,6 +56,9 @@ export async function commitCapture(result: CaptureResult, deps: CommitDeps = {}
       // No key → do not persist personal fields in the clear (fail-safe).
     }
     await writeLocalRecord(captureRecord.store, record);
+    if (captureRecord.store === 'players') {
+      notifyPlayerDirectoryChanged(deps.scope ?? null);
+    }
   }
 
   for (const captureAction of result.actions) {

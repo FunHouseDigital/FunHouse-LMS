@@ -12,8 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServices } from '../state/servicesState';
 import { useAuth } from '../state/authState';
-import { useReferenceData } from '../state/referenceDataState';
-import { getAllLocalRecords, getCachedRead } from '../store/localStore';
+import { useKnownPlayers } from './useKnownPlayers';
 import {
   buildAttendanceActions,
   canConfirmAttendance,
@@ -22,8 +21,6 @@ import {
   type RosterAttendee,
   type SchoolSessionType,
 } from '../domain/captures/attendance';
-import { playerName } from '../domain/roster';
-import type { PlayerOut } from '../domain/types';
 
 interface RosterEntry {
   id: string;
@@ -40,30 +37,21 @@ const TYPE_LABELS: Record<SchoolSessionType, string> = {
 export function Attendance() {
   const { commit } = useServices();
   const { role } = useAuth();
-  const { revision, playersCacheKey, cacheScope } = useReferenceData();
+  const players = useKnownPlayers({ includeLocal: role !== 'facilitator' });
   const [sessionType, setSessionType] = useState<SchoolSessionType>('lesson');
   const [reference, setReference] = useState('');
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const cached = await getCachedRead<PlayerOut[]>(playersCacheKey);
-      const server = (cached?.data ?? []).map((p) => ({ id: p.id, name: playerName(p), present: false }));
-      const local = role === 'facilitator'
-        ? []
-        : (await getAllLocalRecords('players', cacheScope)).map((r) => ({
-            id: String(r.local_id),
-            name: String(r.name ?? 'New player'),
-            present: false,
-          }));
-      if (alive) setRoster([...server, ...local.filter((l) => !server.some((s) => s.id === l.id))]);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [cacheScope, playersCacheKey, revision, role]);
+    setRoster((current) =>
+      players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        present: current.find((entry) => entry.id === player.id)?.present ?? false,
+      })),
+    );
+  }, [players]);
 
   const toggle = useCallback((id: string) => {
     setRoster((prev) => prev.map((m) => (m.id === id ? { ...m, present: !m.present } : m)));
