@@ -22,6 +22,7 @@ import {
 import type { Session } from '../domain/types';
 import { AuthManager, type LoginOutcome, type Role } from '../domain/authManager';
 import { ContainerApiClient } from '../api/client';
+import { clearAuthenticatedResponseCaches } from '../pwa/authenticatedCaches';
 
 export interface AuthContextValue {
   /** True while a valid, unexpired JWT is held (Req 1.5, 1.6). */
@@ -45,9 +46,17 @@ export interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function getDefaultBaseUrl(): string {
-  // Vite injects import.meta.env; fall back to a local dev API otherwise.
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
-  return env?.VITE_API_BASE_URL ?? 'http://localhost:8000';
+  const configured = env?.VITE_API_BASE_URL;
+  if (configured) return configured;
+
+  // Vercel serves the SPA and FastAPI application from the same HTTPS origin.
+  // Keep localhost pointed at the separate development API, but make deployed
+  // builds work without a build-time VITE_API_BASE_URL setting.
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return window.location.origin;
+  }
+  return 'http://localhost:8000';
 }
 
 export interface AuthProviderProps {
@@ -93,6 +102,10 @@ export function AuthProvider({
       try {
         const outcome = await authManager.login(identifier, password);
         if (outcome.ok) {
+          // API responses in CacheStorage are bearer-authorized but keyed by
+          // URL. Clear the previous session's entries before rendering this
+          // account; offline data lives in account-scoped IndexedDB caches.
+          await clearAuthenticatedResponseCaches();
           setSession(outcome.session);
         }
         return outcome;
@@ -106,6 +119,7 @@ export function AuthProvider({
   const logout = useCallback(() => {
     authManager.handleUnauthorized();
     setSession(null);
+    void clearAuthenticatedResponseCaches().catch(() => undefined);
   }, [authManager]);
 
   const value = useMemo<AuthContextValue>(() => {

@@ -120,8 +120,9 @@ export function describeEntitlement(
 export async function getOptimisticRemaining(
   playerId: string,
   entitlementId: string,
+  cacheScope?: string | null,
 ): Promise<OptimisticRemaining | null> {
-  const cached = await getBalances(playerId);
+  const cached = await getBalances(playerId, cacheScope);
   const balance = cached?.balances.find((b) => b.entitlement_id === entitlementId);
   if (!balance) return null;
   const pending = await getActionsByStatus('unsynced');
@@ -132,8 +133,11 @@ export async function getOptimisticRemaining(
  * The pre-confirm display models for every cached entitlement of a player, each
  * with pending draws applied (Req 8.1). Empty when nothing is cached.
  */
-export async function getEntitlementDisplays(playerId: string): Promise<EntitlementDisplay[]> {
-  const cached = await getBalances(playerId);
+export async function getEntitlementDisplays(
+  playerId: string,
+  cacheScope?: string | null,
+): Promise<EntitlementDisplay[]> {
+  const cached = await getBalances(playerId, cacheScope);
   if (!cached) return [];
   const pending = await getActionsByStatus('unsynced');
   return cached.balances.map((b) =>
@@ -149,8 +153,9 @@ export async function canPlayerDraw(
   playerId: string,
   entitlementId: string,
   amount: number,
+  cacheScope?: string | null,
 ): Promise<boolean> {
-  const remaining = await getOptimisticRemaining(playerId, entitlementId);
+  const remaining = await getOptimisticRemaining(playerId, entitlementId, cacheScope);
   if (remaining === null) return false;
   return canDraw(remaining, amount);
 }
@@ -163,6 +168,7 @@ export async function refreshCachedBalances(
   playerId: string,
   balances: BalanceOut[],
   cachedAt?: string,
+  cacheScope?: string | null,
 ): Promise<void> {
-  await writeBalances(playerId, balances, cachedAt);
+  await writeBalances(playerId, balances, cachedAt, cacheScope);
 }

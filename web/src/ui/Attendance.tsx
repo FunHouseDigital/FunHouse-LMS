@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServices } from '../state/servicesState';
+import { useReferenceData } from '../state/referenceDataState';
 import { getAllLocalRecords, getCachedRead } from '../store/localStore';
 import {
   buildAttendanceActions,
@@ -37,6 +38,7 @@ const TYPE_LABELS: Record<SchoolSessionType, string> = {
 
 export function Attendance() {
   const { commit } = useServices();
+  const { revision, playersCacheKey } = useReferenceData();
   const [sessionType, setSessionType] = useState<SchoolSessionType>('lesson');
   const [reference, setReference] = useState('');
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -45,7 +47,7 @@ export function Attendance() {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const cached = await getCachedRead<PlayerOut[]>('players');
+      const cached = await getCachedRead<PlayerOut[]>(playersCacheKey);
       const server = (cached?.data ?? []).map((p) => ({ id: p.id, name: playerName(p), present: false }));
       const local = (await getAllLocalRecords('players')).map((r) => ({
         id: String(r.local_id),
@@ -57,7 +59,7 @@ export function Attendance() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [playersCacheKey, revision]);
 
   const toggle = useCallback((id: string) => {
     setRoster((prev) => prev.map((m) => (m.id === id ? { ...m, present: !m.present } : m)));

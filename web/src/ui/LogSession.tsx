@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServices } from '../state/servicesState';
+import { useReferenceData } from '../state/referenceDataState';
 import { getEntitlementDisplays } from '../domain/entitlementCalculator';
 import type { EntitlementDisplay } from '../domain/entitlementCalculator';
 import {
@@ -27,6 +28,7 @@ import { useKnownPlayers } from './useKnownPlayers';
 
 export function LogSession() {
   const { commit } = useServices();
+  const { cacheScope, refreshPlayerEntitlements } = useReferenceData();
   const players = useKnownPlayers();
 
   const [search, setSearch] = useState('');
@@ -48,13 +50,18 @@ export function LogSession() {
       return;
     }
     void (async () => {
-      const next = await getEntitlementDisplays(playerId);
+      const cached = await getEntitlementDisplays(playerId, cacheScope);
+      if (alive) setDisplays(cached);
+
+      const refreshed = await refreshPlayerEntitlements(playerId);
+      if (!refreshed) return;
+      const next = await getEntitlementDisplays(playerId, cacheScope);
       if (alive) setDisplays(next);
     })();
     return () => {
       alive = false;
     };
-  }, [playerId]);
+  }, [cacheScope, playerId, refreshPlayerEntitlements]);
 
   const recent = useMemo(() => players.slice(0, 5), [players]);
   const filtered = useMemo(() => {

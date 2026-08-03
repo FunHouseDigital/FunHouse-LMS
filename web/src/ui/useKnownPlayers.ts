@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import { getAllLocalRecords, getCachedRead, type LocalRecord } from '../store/localStore';
+import { useReferenceData } from '../state/referenceDataState';
 import { playerName } from '../domain/roster';
 import type { PlayerOut } from '../domain/types';
 
@@ -26,11 +27,12 @@ export interface PlayerChoice {
  * roster (same id).
  */
 export function useKnownPlayers(): PlayerChoice[] {
+  const { revision, playersCacheKey } = useReferenceData();
   const [players, setPlayers] = useState<PlayerChoice[]>([]);
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const cached = await getCachedRead<PlayerOut[]>('players');
+      const cached = await getCachedRead<PlayerOut[]>(playersCacheKey);
       const roster: PlayerChoice[] = (cached?.data ?? []).map((p) => ({
         id: p.id,
         name: playerName(p),
@@ -44,6 +46,6 @@ export function useKnownPlayers(): PlayerChoice[] {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [playersCacheKey, revision]);
   return players;
 }
