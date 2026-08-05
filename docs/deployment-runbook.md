@@ -190,7 +190,7 @@ Expected output — the created / already-present report, e.g.:
 
 ```
 Applying migrations to <host>:5432/funhouse (sslmode=require)
-Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql
+Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql
   Created: locations, schools, users, players, guardians, consents, products, entitlements, sessions, attendance, payments, lessons, student_metrics, sync_log
   Already present: (none)
 ```
@@ -198,7 +198,7 @@ Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facil
 Re-running is a safe no-op (idempotent): a second run reports `Created: (none)`
 and lists the tables under `Already present` (Req 3.2).
 
-### Migration 005 security contract and Supabase rollout
+### Migrations 005-006 security contract and Supabase rollout
 
 Migration `005_public_schema_lockdown.sql` makes the FunHouse schema unavailable
 through Supabase's Data API. Every replay deliberately removes **all** RLS
@@ -223,6 +223,13 @@ is rolled back atomically. It also revokes PostgreSQL's built-in `PUBLIC EXECUTE
 default for every future function created by the migration role. PostgreSQL
 cannot scope that built-in default revoke to one schema. Existing functions in
 other schemas are unchanged.
+
+Migration `006_consents_function_search_path.sql` fixes the consent trigger
+function's search path to the empty string. This prevents caller-controlled
+schemas from changing unqualified name resolution while preserving the existing
+function body, owner, privileges, and trigger. PostgreSQL continues to resolve
+`pg_catalog` implicitly. Future edits to this function must schema-qualify any
+database objects they reference.
 
 For the live Supabase project after this change reaches `main`:
 
@@ -254,9 +261,22 @@ For the live Supabase project after this change reaches `main`:
    ORDER BY e.name;
    ```
 
-4. Confirm `pg_policies` has no rows for those tables and rerun Supabase Security
-   Advisor. The `rls_disabled_in_public` finding must be gone before considering
-   the incident resolved.
+4. Confirm `pg_policies` has no rows for those tables. Then verify the trigger
+   function has a fixed empty path:
+
+   ```sql
+   SELECT p.proname, p.proconfig
+   FROM pg_proc AS p
+   JOIN pg_namespace AS n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname = 'funhouse_reject_consents_mutation'
+     AND pg_get_function_identity_arguments(p.oid) = '';
+   ```
+
+   Expected: one row whose `proconfig` contains `search_path=""`.
+5. Rerun Supabase Security Advisor. Both `rls_disabled_in_public` and
+   `function_search_path_mutable` must be gone before considering the security
+   incident resolved.
 
 **Tear down the one-off immediately** after the migration completes (terminate
 the task/instance). It leaves no standing service. *(Not recommended
