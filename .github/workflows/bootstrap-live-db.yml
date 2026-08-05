@@ -1,7 +1,7 @@
 name: Initialize Live Supabase Database
 
 # Manual, serialized production operation for the Vercel + Supabase deployment.
-# It applies a missing schema, seeds reference data, initializes one seeded
+# It applies all schema migrations, seeds reference data, initializes one seeded
 # user's password, and verifies login without exposing the password or JWT.
 
 on:
@@ -157,87 +157,7 @@ jobs:
           print("Connection identifiers and bootstrap credential selection validated; no values were logged.")
           PY
 
-      - name: Check whether schema is already current
-        id: schema
-        env:
-          DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
-          DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          DB_SSLMODE: verify-full
-          PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
-          PGCONNECT_TIMEOUT: "15"
-          PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
-        run: |
-          python - <<'PY'
-          import os
-
-          from funhouse_pipeline.config import load_config
-          from funhouse_pipeline.db import EXPECTED_TABLES, connect
-
-          connection = connect(load_config(), connect_timeout=15)
-          try:
-              with connection.cursor() as cursor:
-                  cursor.execute(
-                      """
-                      SELECT table_name
-                      FROM information_schema.tables
-                      WHERE table_schema = current_schema()
-                        AND table_name = ANY(%s)
-                      """,
-                      (list(EXPECTED_TABLES),),
-                  )
-                  tables = {row[0] for row in cursor.fetchall()}
-                  ready = tables == set(EXPECTED_TABLES)
-
-                  if ready:
-                      cursor.execute(
-                          """
-                          SELECT EXISTS (
-                              SELECT 1
-                              FROM information_schema.columns
-                              WHERE table_schema = current_schema()
-                                AND table_name = 'users'
-                                AND column_name = 'school_id'
-                          )
-                          """
-                      )
-                      ready = bool(cursor.fetchone()[0])
-
-                  if ready:
-                      cursor.execute(
-                          """
-                          SELECT EXISTS (
-                              SELECT 1
-                              FROM pg_trigger
-                              WHERE tgrelid = 'consents'::regclass
-                                AND tgname = 'trg_consents_append_only'
-                                AND NOT tgisinternal
-                          )
-                          """
-                      )
-                      ready = bool(cursor.fetchone()[0])
-
-                  if ready:
-                      cursor.execute(
-                          """
-                          SELECT pg_get_constraintdef(oid)
-                          FROM pg_constraint
-                          WHERE conrelid = 'users'::regclass
-                            AND conname = 'users_role_check'
-                          """
-                      )
-                      row = cursor.fetchone()
-                      ready = bool(row and "facilitator" in row[0])
-          finally:
-              connection.close()
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"ready={'true' if ready else 'false'}\n")
-          print("Schema readiness check complete; no credentials or row data were logged.")
-          PY
-
-      - name: Apply schema migrations when needed
-        if: steps.schema.outputs.ready != 'true'
+      - name: Apply schema migrations
         env:
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
@@ -324,7 +244,7 @@ jobs:
           {
             echo "## Live Supabase initialization complete"
             echo ""
-            echo "- Schema is current"
+            echo "- Schema is current and FunHouse tables are RLS locked down"
             echo "- Reference data seeded"
             echo "- Login initialized for \`${BOOTSTRAP_USER_NAME}\`"
             echo "- Vercel API returned a valid login response"

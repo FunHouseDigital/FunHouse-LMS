@@ -190,13 +190,73 @@ Expected output — the created / already-present report, e.g.:
 
 ```
 Applying migrations to <host>:5432/funhouse (sslmode=require)
-Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql
+Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql
   Created: locations, schools, users, players, guardians, consents, products, entitlements, sessions, attendance, payments, lessons, student_metrics, sync_log
   Already present: (none)
 ```
 
 Re-running is a safe no-op (idempotent): a second run reports `Created: (none)`
 and lists the tables under `Already present` (Req 3.2).
+
+### Migration 005 security contract and Supabase rollout
+
+Migration `005_public_schema_lockdown.sql` makes the FunHouse schema unavailable
+through Supabase's Data API. Every replay deliberately removes **all** RLS
+policies from the 14 FunHouse tables, enables non-forced RLS, and removes direct
+object privileges from `PUBLIC`, `anon`, `authenticated`, `service_role`, and
+`authenticator`. Do not add a Supabase REST policy out of band: a later migration
+run will remove it. Any future design that uses Supabase REST must explicitly
+supersede migration 005 and introduce a reviewed policy model.
+
+The migration requires every FunHouse table to be owned by the migration/runtime
+role. This preserves the existing direct FastAPI psycopg path because table
+owners bypass non-forced RLS. Before applying it to Supabase, confirm that the
+Vercel `DB_USER` is the same owner-backed `postgres.<project-ref>` pooler identity
+used by the **Initialize Live Supabase Database** workflow. Stop if Vercel uses a
+different role; first separate the owner, migrator, and API roles with explicit
+policies and grants.
+
+The migration checks effective privileges through inherited and `SET ROLE`
+membership paths. If it reports that a Data API role can reach a privileged
+role, remove that unexpected membership/grant and rerun; the failed migration
+is rolled back atomically. It also revokes PostgreSQL's built-in `PUBLIC EXECUTE`
+default for every future function created by the migration role. PostgreSQL
+cannot scope that built-in default revoke to one schema. Existing functions in
+other schemas are unchanged.
+
+For the live Supabase project after this change reaches `main`:
+
+1. Run **Initialize Live Supabase Database** from `main`. It now always runs the
+   idempotent migration chain before seed/bootstrap and its database-backed login
+   probe.
+2. Confirm an authenticated FastAPI login and at least one normal DB-backed
+   read/write operation. `/health` alone is insufficient because it does not
+   query PostgreSQL.
+3. In the Supabase SQL editor, verify all 14 rows below show
+   `rls_enabled = true` and `rls_forced = false`:
+
+   ```sql
+   WITH expected(name) AS (
+     VALUES ('locations'), ('schools'), ('users'), ('guardians'), ('players'),
+            ('consents'), ('products'), ('entitlements'), ('sessions'),
+            ('attendance'), ('payments'), ('lessons'), ('student_metrics'),
+            ('sync_log')
+   )
+   SELECT e.name,
+          c.relrowsecurity AS rls_enabled,
+          c.relforcerowsecurity AS rls_forced,
+          pg_get_userbyid(c.relowner) AS owner
+   FROM expected AS e
+   LEFT JOIN pg_class AS c
+     ON c.relnamespace = 'public'::regnamespace
+    AND c.relname = e.name
+    AND c.relkind IN ('r', 'p')
+   ORDER BY e.name;
+   ```
+
+4. Confirm `pg_policies` has no rows for those tables and rerun Supabase Security
+   Advisor. The `rls_disabled_in_public` finding must be gone before considering
+   the incident resolved.
 
 **Tear down the one-off immediately** after the migration completes (terminate
 the task/instance). It leaves no standing service. *(Not recommended
