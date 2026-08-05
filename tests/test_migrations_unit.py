@@ -37,6 +37,7 @@ def test_migration_files_are_present_and_ordered():
         "002_consents_append_only.sql",
         "003_role_facilitator.sql",
         "004_users_school_id.sql",
+        "005_public_schema_lockdown.sql",
     ]
 
 
