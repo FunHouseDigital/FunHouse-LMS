@@ -1,0 +1,138 @@
+name: Verify Live Supabase Runtime Role
+
+# Read-only pre-cutover gate for the dedicated FastAPI PostgreSQL login.
+# Role/password provisioning remains an out-of-band production operation.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Confirm the live runtime-role verification"
+        type: choice
+        required: true
+        options:
+          - verify-live-runtime-role
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-supabase-runtime-role
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify runtime identity and effective privileges
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+
+    steps:
+      - name: Require main branch and explicit confirmation
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run this production workflow from the main branch."
+            exit 1
+          fi
+          if [ "${{ inputs.confirmation }}" != "verify-live-runtime-role" ]; then
+            echo "::error::Live runtime-role confirmation did not match."
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install application
+        run: python -m pip install .
+
+      - name: Install pinned Supabase CA certificate
+        env:
+          SUPABASE_CA_URL: https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt
+          SUPABASE_CA_SHA256: 700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7
+        run: |
+          set -euo pipefail
+          certificate="${RUNNER_TEMP}/supabase-prod-ca-2021.crt"
+          curl \
+            --proto '=https' \
+            --tlsv1.2 \
+            --fail \
+            --silent \
+            --show-error \
+            --max-redirs 0 \
+            "$SUPABASE_CA_URL" \
+            --output "$certificate"
+          echo "${SUPABASE_CA_SHA256}  ${certificate}" | sha256sum --check --strict
+          chmod 600 "$certificate"
+
+      - name: Normalize and validate protected runtime settings
+        env:
+          RAW_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
+          RAW_DB_USER: ${{ secrets.SUPABASE_RUNTIME_DB_USER }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_RUNTIME_DB_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+
+          required = {
+              "SUPABASE_DB_HOST": os.environ.get("RAW_DB_HOST", ""),
+              "SUPABASE_RUNTIME_DB_USER": os.environ.get("RAW_DB_USER", ""),
+              "SUPABASE_RUNTIME_DB_PASSWORD": os.environ.get("DB_PASSWORD", ""),
+          }
+          missing = [name for name, value in required.items() if not value]
+          if missing:
+              raise SystemExit(
+                  "Required production settings are missing: " + ", ".join(missing)
+              )
+
+          host = required["SUPABASE_DB_HOST"].strip()
+          user = required["SUPABASE_RUNTIME_DB_USER"].strip()
+          if not re.fullmatch(r"[a-z0-9-]+\.pooler\.supabase\.com", host):
+              raise SystemExit(
+                  "SUPABASE_DB_HOST must contain only the Supabase session-pooler host."
+              )
+          if os.environ.get("DB_PORT") != "5432":
+              raise SystemExit("Use session-pooler port 5432 for runtime verification.")
+          if not re.fullmatch(r"funhouse_runtime\.[a-z0-9]+", user):
+              raise SystemExit(
+                  "SUPABASE_RUNTIME_DB_USER must be the custom-role pooler username "
+                  "shown by Supabase Connect."
+              )
+
+          print(f"::add-mask::{host}")
+          print(f"::add-mask::{user}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as environment:
+              environment.write(f"DB_HOST={host}\n")
+              environment.write(f"DB_USER={user}\n")
+          print("Runtime connection identifiers validated; no values were logged.")
+          PY
+
+      - name: Verify runtime role contract
+        env:
+          DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
+          DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_RUNTIME_DB_PASSWORD }}
+          DB_SSLMODE: verify-full
+          PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
+          PGCONNECT_TIMEOUT: "15"
+          PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=60000"
+        run: python -m funhouse_pipeline.db.verify_runtime_role
+
+      - name: Publish non-secret summary
+        run: |
+          {
+            echo "## Supabase runtime role verified"
+            echo ""
+            echo "- Connected through the production session pooler as \`funhouse_runtime\`"
+            echo "- Elevated attributes and role memberships are absent"
+            echo "- Runtime grants and RLS policies exactly match the FastAPI access matrix"
+            echo "- Permanent schema/database DDL, DELETE, TRUNCATE, and direct trigger-function execution remain denied"
+          } >> "$GITHUB_STEP_SUMMARY"

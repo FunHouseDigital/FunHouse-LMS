@@ -3,14 +3,14 @@
 --
 -- Supabase exposes the public schema through PostgREST. The application does
 -- not use that path: FastAPI connects directly with psycopg and applies its own
--- authentication and RBAC. Every FunHouse table therefore uses RLS with no
--- policies, while PostgREST roles lose all object privileges.
+-- authentication and RBAC. This migration therefore clears all policies as a
+-- fail-closed baseline; activated migration 007 later restores policies only for the
+-- dedicated FastAPI runtime role while Data API roles remain denied.
 --
--- RLS is intentionally not forced. The current deployment uses the table owner
--- for migrations, seed operations, and direct FastAPI access; FORCE ROW LEVEL
--- SECURITY would deny that owner unless a separate runtime role and policy were
--- introduced first. Ordinary roles remain default-denied because no policies
--- survive this migration.
+-- RLS is intentionally not forced. The dedicated non-owner runtime role is
+-- policy-bound after migration 007, while the offline table owner can still run
+-- migrations, seed operations, and bootstrap tasks without maintenance
+-- policies or provider-specific BYPASSRLS privileges.
 --
 -- All statements are idempotent. Role-specific statements are conditional so
 -- the same migration remains portable to PostgreSQL installations without the
@@ -84,8 +84,8 @@ BEGIN
 
         IF owner_name <> current_user THEN
             RAISE EXCEPTION
-                'FunHouse table %.% is owned by %, not migration/runtime role %; '
-                'verify the FastAPI DB_USER before applying RLS',
+                'FunHouse table %.% is owned by %, not active maintenance role %; '
+                'verify the migration identity or DB_MAINTENANCE_ROLE before applying RLS',
                 target_schema,
                 object_name,
                 owner_name,

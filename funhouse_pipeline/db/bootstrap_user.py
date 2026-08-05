@@ -16,6 +16,7 @@ from typing import Any
 from funhouse_api.auth.service import hash_password, verify_password
 from funhouse_pipeline.config import load_config
 from funhouse_pipeline.db import SEED_USERS, SMITHFIELD_LOCATION, connect
+from funhouse_pipeline.db.maintenance import assume_maintenance_role
 
 _MIN_PASSWORD_CHARS = 12
 _MAX_BCRYPT_BYTES = 72
@@ -137,6 +138,7 @@ def apply(
 
     conn = connect(config)
     try:
+        assume_maintenance_role(conn, env=env)
         bootstrap_user(conn, name=name, password=password)
     finally:
         conn.close()
