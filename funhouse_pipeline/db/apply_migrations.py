@@ -26,6 +26,7 @@ from typing import Sequence
 
 from funhouse_pipeline.config import load_config
 from funhouse_pipeline.db import connect, run_migrations
+from funhouse_pipeline.db.maintenance import assume_maintenance_role
 
 
 def apply(config_path: str | None = None) -> int:
@@ -49,6 +50,7 @@ def apply(config_path: str | None = None) -> int:
 
     conn = connect(config)
     try:
+        assume_maintenance_role(conn)
         result = run_migrations(conn)
     finally:
         conn.close()

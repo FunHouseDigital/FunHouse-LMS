@@ -75,8 +75,53 @@ def pg_dsn() -> str:
     return dsn
 
 
+@pytest.fixture(scope="session")
+def runtime_database_role(pg_dsn: str) -> Iterator[None]:
+    """Create the cluster-wide runtime role once for activated migration tests.
+
+    A session advisory lock serializes this lifecycle across pytest workers.
+    Existing roles are never modified; use a disposable test database instead.
+    """
+    import psycopg
+
+    admin = psycopg.connect(pg_dsn, autocommit=True)
+    role_created = False
+    try:
+        admin.execute(
+            "SELECT pg_advisory_lock(hashtext(%s))",
+            ("funhouse-tests-runtime-role",),
+        )
+        if (
+            admin.execute("SELECT 1 FROM pg_roles WHERE rolname = 'funhouse_runtime'").fetchone()
+            is not None
+        ):
+            pytest.skip(
+                "The test database already contains funhouse_runtime; use a disposable database"
+            )
+        admin.execute(
+            """
+            CREATE ROLE funhouse_runtime
+            LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+            """
+        )
+        role_created = True
+        yield
+    finally:
+        if role_created:
+            admin.execute("DROP OWNED BY funhouse_runtime")
+            admin.execute("DROP ROLE funhouse_runtime")
+        admin.execute(
+            "SELECT pg_advisory_unlock(hashtext(%s))",
+            ("funhouse-tests-runtime-role",),
+        )
+        admin.close()
+
+
 @pytest.fixture
-def db_connection(pg_dsn: str) -> Iterator["object"]:
+def db_connection(
+    pg_dsn: str,
+    runtime_database_role: None,
+) -> Iterator["object"]:
     """Yield an isolated psycopg connection scoped to a disposable schema.
 
     Isolation model:
@@ -88,6 +133,7 @@ def db_connection(pg_dsn: str) -> Iterator["object"]:
     """
     import psycopg
 
+    del runtime_database_role  # pytest dependency; role lifecycle is session-scoped.
     schema = f"test_{uuid.uuid4().hex}"
 
     admin = psycopg.connect(pg_dsn, autocommit=True)

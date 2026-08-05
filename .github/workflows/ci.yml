@@ -139,6 +139,7 @@ jobs:
       DB_USER: funhouse
       DB_PASSWORD: funhouse
       DB_SSLMODE: disable
+      PGOPTIONS: "-c funhouse.enable_runtime_role=on"
 
     steps:
       - uses: actions/checkout@v4

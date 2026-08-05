@@ -92,6 +92,7 @@ jobs:
           RAW_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
           RAW_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          RAW_MAINTENANCE_ROLE: ${{ vars.SUPABASE_DB_MAINTENANCE_ROLE }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           GENERAL_BOOTSTRAP_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
           FACILITATOR_BOOTSTRAP_PASSWORD: ${{ secrets.FACILITATOR_BOOTSTRAP_PASSWORD }}
@@ -129,15 +130,24 @@ jobs:
           # newline. Normalize identifiers only; password whitespace is significant.
           host = required["SUPABASE_DB_HOST"].strip()
           user = required["SUPABASE_DB_USER"].strip()
+          maintenance_role = os.environ.get("RAW_MAINTENANCE_ROLE", "").strip()
           if not re.fullmatch(r"[a-z0-9-]+\.pooler\.supabase\.com", host):
               raise SystemExit(
                   "SUPABASE_DB_HOST must contain only the Supabase session-pooler host."
               )
           if os.environ.get("DB_PORT") != "5432":
               raise SystemExit("Use session-pooler port 5432 for migrations.")
-          if not re.fullmatch(r"postgres\.[a-z0-9]+", user):
+          if not re.fullmatch(r"(?:postgres|funhouse_migrator)\.[a-z0-9]+", user):
               raise SystemExit(
-                  "SUPABASE_DB_USER must contain only the pooler username shown by Supabase Connect."
+                  "SUPABASE_DB_USER must be the owner or migrator pooler username shown by Supabase Connect."
+              )
+          if user.startswith("funhouse_migrator.") and maintenance_role != "funhouse_owner":
+              raise SystemExit(
+                  "SUPABASE_DB_MAINTENANCE_ROLE must be funhouse_owner when using funhouse_migrator."
+              )
+          if maintenance_role not in ("", "funhouse_owner"):
+              raise SystemExit(
+                  "SUPABASE_DB_MAINTENANCE_ROLE must be empty or funhouse_owner."
               )
 
           # Normalized derivatives may differ from GitHub's registered secret
@@ -163,9 +173,10 @@ jobs:
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
+          DB_MAINTENANCE_ROLE: ${{ vars.SUPABASE_DB_MAINTENANCE_ROLE }}
           PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
           PGCONNECT_TIMEOUT: "15"
-          PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
+          PGOPTIONS: "-c funhouse.enable_runtime_role=on -c lock_timeout=15000 -c statement_timeout=300000"
         run: python -m funhouse_pipeline.db.apply_migrations
 
       - name: Seed reference data
@@ -174,6 +185,7 @@ jobs:
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
+          DB_MAINTENANCE_ROLE: ${{ vars.SUPABASE_DB_MAINTENANCE_ROLE }}
           PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
           PGCONNECT_TIMEOUT: "15"
           PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"
@@ -185,6 +197,7 @@ jobs:
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
           DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_SSLMODE: verify-full
+          DB_MAINTENANCE_ROLE: ${{ vars.SUPABASE_DB_MAINTENANCE_ROLE }}
           PGSSLROOTCERT: ${{ runner.temp }}/supabase-prod-ca-2021.crt
           PGCONNECT_TIMEOUT: "15"
           PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=300000"

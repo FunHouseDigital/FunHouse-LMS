@@ -190,7 +190,7 @@ Expected output — the created / already-present report, e.g.:
 
 ```
 Applying migrations to <host>:5432/funhouse (sslmode=require)
-Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql
+Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql, 007_runtime_role_access.sql
   Created: locations, schools, users, players, guardians, consents, products, entitlements, sessions, attendance, payments, lessons, student_metrics, sync_log
   Already present: (none)
 ```
@@ -198,23 +198,24 @@ Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facil
 Re-running is a safe no-op (idempotent): a second run reports `Created: (none)`
 and lists the tables under `Already present` (Req 3.2).
 
-### Migrations 005-006 security contract and Supabase rollout
+### Migrations 005-007 security contract and Supabase rollout
 
-Migration `005_public_schema_lockdown.sql` makes the FunHouse schema unavailable
-through Supabase's Data API. Every replay deliberately removes **all** RLS
-policies from the 14 FunHouse tables, enables non-forced RLS, and removes direct
-object privileges from `PUBLIC`, `anon`, `authenticated`, `service_role`, and
-`authenticator`. Do not add a Supabase REST policy out of band: a later migration
-run will remove it. Any future design that uses Supabase REST must explicitly
-supersede migration 005 and introduce a reviewed policy model.
+Migration `005_public_schema_lockdown.sql` first establishes a fail-closed
+baseline for the FunHouse schema. Every replay removes existing RLS policies
+from the 14 FunHouse tables, enables non-forced RLS, and removes direct object
+privileges from `PUBLIC`, `anon`, `authenticated`, `service_role`, and
+`authenticator`. Migration `007_runtime_role_access.sql` then restores only the
+reviewed policies and table privileges for the dedicated `funhouse_runtime`
+login in the same transaction. Do not add a Supabase REST policy out of band: a
+later migration run will remove it. Any future design that uses Supabase REST
+must explicitly supersede migrations 005 and 007 with a reviewed policy model.
 
-The migration requires every FunHouse table to be owned by the migration/runtime
-role. This preserves the existing direct FastAPI psycopg path because table
-owners bypass non-forced RLS. Before applying it to Supabase, confirm that the
-Vercel `DB_USER` is the same owner-backed `postgres.<project-ref>` pooler identity
-used by the **Initialize Live Supabase Database** workflow. Stop if Vercel uses a
-different role; first separate the owner, migrator, and API roles with explicit
-policies and grants.
+Both migrations require every FunHouse table to be owned by the active
+maintenance role. The **Initialize Live Supabase Database** workflow remains an
+owner/migrator-only operation and can optionally set
+`DB_MAINTENANCE_ROLE=funhouse_owner`; Vercel must use the separate
+`funhouse_runtime.<project-ref>` session-pooler identity after cutover. Never
+store the owner or migrator password in Vercel.
 
 The migration checks effective privileges through inherited and `SET ROLE`
 membership paths. If it reports that a Data API role can reach a privileged
@@ -231,16 +232,44 @@ function body, owner, privileges, and trigger. PostgreSQL continues to resolve
 `pg_catalog` implicitly. Future edits to this function must schema-qualify any
 database objects they reference.
 
+Migration `007_runtime_role_access.sql` is a compatibility no-op on deployment
+targets where `funhouse_runtime` does not exist. The controlled first migration
+sets `funhouse.enable_runtime_role=on` so a missing role fails closed. Once the
+role exists, migration 007 restores its full grant/policy contract on every
+replay even if that setting is omitted, preventing migration 005's policy reset
+from taking the runtime offline. The role must be `LOGIN NOSUPERUSER NOCREATEDB
+NOCREATEROLE NOREPLICATION NOBYPASSRLS`
+with no role memberships in either direction. It grants only the table
+operations used by FastAPI, creates runtime-only role-isolation policies,
+denies permanent schema/database creation, and keeps direct trigger-function
+execution unavailable. PostgreSQL may still expose isolated temporary-object
+creation through the database's `PUBLIC TEMP` default; this is not an
+application grant and removing it would be a database-wide policy decision.
+Role creation and passwords are intentionally not committed to migrations.
+
 For the live Supabase project after this change reaches `main`:
 
-1. Run **Initialize Live Supabase Database** from `main`. It now always runs the
-   idempotent migration chain before seed/bootstrap and its database-backed login
-   probe.
-2. Confirm an authenticated FastAPI login and at least one normal DB-backed
-   read/write operation. `/health` alone is insufficient because it does not
-   query PostgreSQL.
-3. In the Supabase SQL editor, verify all 14 rows below show
-   `rls_enabled = true` and `rls_forced = false`:
+1. In Supabase, confirm the custom session-pooler username format for
+   `funhouse_runtime` in **Connect**. Provision the PostgreSQL role and a distinct
+   random password out of band; do not reuse the project owner password.
+2. Add `SUPABASE_RUNTIME_DB_USER` and `SUPABASE_RUNTIME_DB_PASSWORD` to the
+   protected GitHub `production` environment. Keep existing owner/migrator
+   secrets unchanged for rollback.
+3. Run **Initialize Live Supabase Database** from `main` using the owner or
+   migrator identity. The migration chain atomically installs the runtime grants
+   and policies before committing.
+4. Run **Verify Live Supabase Runtime Role** from `main`. It must confirm the
+   exact effective grants, policies, role attributes, and ownership separation
+   through the same session pooler Vercel will use.
+5. In Vercel, set `DB_USER` to the verified custom-role pooler username and
+   `DB_PASSWORD` to its distinct password, then redeploy. Do not change the
+   owner/migrator workflow secrets.
+6. Confirm an authenticated FastAPI login and representative founder, manager,
+   and facilitator DB-backed read/write operations. `/health` alone is
+   insufficient because it does not query PostgreSQL.
+7. In the Supabase SQL editor, verify all 14 rows below show
+   `rls_enabled = true`, `rls_forced = false`, and an owner other than
+   `funhouse_runtime`:
 
    ```sql
    WITH expected(name) AS (
@@ -261,10 +290,20 @@ For the live Supabase project after this change reaches `main`:
    ORDER BY e.name;
    ```
 
-4. Confirm `pg_policies` has no rows for those tables. Then verify the trigger
-   function has a fixed empty path:
+8. Confirm the only policies on those tables target `funhouse_runtime`, then
+   verify the trigger function has a fixed empty path:
 
    ```sql
+   SELECT tablename, policyname, cmd, roles
+   FROM pg_policies
+   WHERE schemaname = 'public'
+     AND tablename IN (
+       'locations', 'schools', 'users', 'guardians', 'players', 'consents',
+       'products', 'entitlements', 'sessions', 'attendance', 'payments',
+       'lessons', 'student_metrics', 'sync_log'
+     )
+   ORDER BY tablename, policyname;
+
    SELECT p.proname, p.proconfig
    FROM pg_proc AS p
    JOIN pg_namespace AS n ON n.oid = p.pronamespace
@@ -273,10 +312,28 @@ For the live Supabase project after this change reaches `main`:
      AND pg_get_function_identity_arguments(p.oid) = '';
    ```
 
-   Expected: one row whose `proconfig` contains `search_path=""`.
-5. Rerun Supabase Security Advisor. Both `rls_disabled_in_public` and
-   `function_search_path_mutable` must be gone before considering the security
-   incident resolved.
+   Expected: 24 `funhouse_runtime_*` policy rows whose `roles` value contains
+   only `funhouse_runtime`, plus one function row whose `proconfig` contains
+   `search_path=""`.
+9. Rerun Supabase Security Advisor. It must remain at zero errors and zero
+   warnings after the runtime-role policy installation.
+
+### Runtime-role rollback and policy recovery
+
+- **Before Vercel cutover:** if migration or runtime verification fails, stop.
+  The transaction rolls back and the existing owner-backed API remains live.
+  Correct role attributes, memberships, or grants before rerunning; do not
+  change Vercel secrets.
+- **After Vercel cutover:** if any DB-backed operation fails, first restore the
+  previous owner-backed `DB_USER` and `DB_PASSWORD` in Vercel and redeploy.
+  Verify login plus a representative write before changing database policies.
+- **Policy-loss recovery:** run **Initialize Live Supabase Database** with the
+  protected owner/migrator identity; its migration step forces runtime-role
+  activation and atomically rebuilds the 24 policies. Then rerun **Verify Live
+  Supabase Runtime Role** before attempting the Vercel runtime cutover again.
+- Keep the old owner credential valid and migration-only through a soak period.
+  Remove it from Vercel only after founder, manager, and facilitator flows pass;
+  rotate or retire credentials last, never as the first rollback action.
 
 **Tear down the one-off immediately** after the migration completes (terminate
 the task/instance). It leaves no standing service. *(Not recommended
