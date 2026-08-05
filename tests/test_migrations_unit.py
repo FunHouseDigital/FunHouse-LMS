@@ -38,6 +38,7 @@ def test_migration_files_are_present_and_ordered():
         "003_role_facilitator.sql",
         "004_users_school_id.sql",
         "005_public_schema_lockdown.sql",
+        "006_consents_function_search_path.sql",
     ]
 
 
