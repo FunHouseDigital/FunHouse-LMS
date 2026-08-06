@@ -16,6 +16,8 @@ from funhouse_pipeline.config import load_config
 from funhouse_pipeline.db import connect
 
 RUNTIME_ROLE = "funhouse_runtime"
+_SUPABASE_CREATOR_MEMBER = "postgres"
+_SUPABASE_CREATOR_GRANTOR = "supabase_admin"
 
 EXPECTED_PRIVILEGES: dict[str, frozenset[str]] = {
     "locations": frozenset(),
@@ -109,28 +111,64 @@ def _verify(conn: Any) -> tuple[str, str]:
                 failures.append("runtime role has BYPASSRLS")
 
         if runtime_oid is not None:
+            # PostgreSQL 16+ automatically grants roles created by a
+            # non-superuser CREATEROLE principal back to their creator. Hosted
+            # Supabase records that administrative edge as supabase_admin
+            # granting funhouse_runtime to postgres with ADMIN true but
+            # INHERIT/SET false. It cannot be removed by postgres. Those option
+            # values prevent immediate inheritance or SET ROLE access, while
+            # postgres remains the trusted offline administrator and could
+            # deliberately regrant access. Allow only that exact relationship.
+            # to_jsonb keeps the query portable to PostgreSQL 15, where the
+            # option keys are absent and therefore cannot match the exception.
             cursor.execute(
                 """
-                SELECT 'parent', parent.rolname
+                SELECT granted_role.rolname,
+                       member_role.rolname,
+                       grantor_role.rolname,
+                       membership.admin_option,
+                       (to_jsonb(membership) ->> 'inherit_option')::boolean,
+                       (to_jsonb(membership) ->> 'set_option')::boolean
                 FROM pg_auth_members AS membership
-                JOIN pg_roles AS parent ON parent.oid = membership.roleid
+                JOIN pg_roles AS granted_role
+                  ON granted_role.oid = membership.roleid
+                JOIN pg_roles AS member_role
+                  ON member_role.oid = membership.member
+                JOIN pg_roles AS grantor_role
+                  ON grantor_role.oid = membership.grantor
                 WHERE membership.member = %s
-                UNION ALL
-                SELECT 'member', member_role.rolname
-                FROM pg_auth_members AS membership
-                JOIN pg_roles AS member_role ON member_role.oid = membership.member
-                WHERE membership.roleid = %s
-                ORDER BY 1, 2
+                   OR membership.roleid = %s
+                ORDER BY 1, 2, 3
                 """,
                 (runtime_oid, runtime_oid),
             )
-            memberships = cursor.fetchall()
-            if memberships:
-                rendered_memberships = ", ".join(
-                    f"{direction}:{role_name}" for direction, role_name in memberships
+            forbidden_memberships = []
+            for (
+                granted_role,
+                member_role,
+                grantor_role,
+                admin_option,
+                inherit_option,
+                set_option,
+            ) in cursor.fetchall():
+                allowed_creator_administration = (
+                    granted_role == RUNTIME_ROLE
+                    and member_role == _SUPABASE_CREATOR_MEMBER
+                    and grantor_role == _SUPABASE_CREATOR_GRANTOR
+                    and admin_option is True
+                    and inherit_option is False
+                    and set_option is False
                 )
+                if not allowed_creator_administration:
+                    forbidden_memberships.append(
+                        f"{granted_role}->{member_role} "
+                        f"(grantor={grantor_role}, admin={admin_option}, "
+                        f"inherit={inherit_option}, set={set_option})"
+                    )
+            if forbidden_memberships:
                 failures.append(
-                    "runtime role has forbidden role relationships: " + rendered_memberships
+                    "runtime role has forbidden role relationships: "
+                    + ", ".join(forbidden_memberships)
                 )
 
         cursor.execute(

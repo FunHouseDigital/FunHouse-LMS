@@ -135,14 +135,39 @@ BEGIN
             runtime_role;
     END IF;
 
+    -- PostgreSQL 16+ automatically grants a role created by a non-superuser
+    -- CREATEROLE principal back to its creator. Hosted Supabase records that
+    -- administrative edge as supabase_admin granting funhouse_runtime to
+    -- postgres with ADMIN true but INHERIT and SET false. The creator cannot
+    -- remove the bootstrap-superuser grant. Those option values prevent
+    -- immediate inheritance or SET ROLE access, while postgres remains a
+    -- trusted offline administrator that could regrant access deliberately.
+    -- Permit only that exact platform edge; every other or immediately usable
+    -- relationship remains forbidden. to_jsonb keeps this migration parseable
+    -- on PostgreSQL 15, where the option columns do not exist and the exception
+    -- therefore cannot match.
     IF EXISTS (
         SELECT 1
           FROM pg_auth_members AS membership
-         WHERE membership.member = runtime_oid
-            OR membership.roleid = runtime_oid
+          JOIN pg_roles AS member_role
+            ON member_role.oid = membership.member
+          JOIN pg_roles AS grantor_role
+            ON grantor_role.oid = membership.grantor
+         WHERE (
+                   membership.member = runtime_oid
+                   OR membership.roleid = runtime_oid
+               )
+           AND NOT (
+               membership.roleid = runtime_oid
+               AND member_role.rolname = 'postgres'
+               AND grantor_role.rolname = 'supabase_admin'
+               AND membership.admin_option
+               AND (to_jsonb(membership) ->> 'inherit_option')::boolean IS FALSE
+               AND (to_jsonb(membership) ->> 'set_option')::boolean IS FALSE
+           )
     ) THEN
         RAISE EXCEPTION
-            'Runtime role % must neither inherit from nor be granted to any other role',
+            'Runtime role % has a forbidden role relationship; only the non-inheritable, non-settable Supabase creator-administration grant to postgres is allowed',
             runtime_role;
     END IF;
 
