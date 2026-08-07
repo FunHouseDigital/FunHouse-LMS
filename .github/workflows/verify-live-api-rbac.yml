@@ -1,0 +1,66 @@
+name: Verify Live API Role Access
+
+# Manual production acceptance probe for founder, manager, and facilitator.
+# It calls only the deployed HTTPS API and never receives a database credential.
+# Stable synthetic canary records make successful write checks idempotent.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Confirm retained synthetic canary reads/writes"
+        type: choice
+        required: true
+        options:
+          - verify-live-api-role-access
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-api-role-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify role logins, scoped reads, and scoped writes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      VERCEL_API_URL: https://fun-house-lms.vercel.app
+
+    steps:
+      - name: Require main branch and explicit confirmation
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run this production workflow from the main branch."
+            exit 1
+          fi
+          if [ "${{ inputs.confirmation }}" != "verify-live-api-role-access" ]; then
+            echo "::error::Live API role verification confirmation did not match."
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify protected reads and idempotent writes
+        env:
+          BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
+          FACILITATOR_BOOTSTRAP_PASSWORD: ${{ secrets.FACILITATOR_BOOTSTRAP_PASSWORD }}
+        run: python3 -m funhouse_pipeline.verify_live_api_rbac
+
+      - name: Publish non-secret summary
+        run: |
+          {
+            echo "## Live API role verification passed"
+            echo ""
+            echo "- Founder, manager, and facilitator authenticated through Vercel"
+            echo "- Each role completed a database-backed, scope-checked player read"
+            echo "- Each role inserted/read back or reused its synthetic student metric"
+            echo "- The retained player is marked SYSTEM_TEST_DO_NOT_REPORT"
+            echo "- Reruns reuse business rows but append normal sync audit entries"
+            echo "- No credentials, JWTs, roster rows, or record identifiers were logged"
+          } >> "$GITHUB_STEP_SUMMARY"
