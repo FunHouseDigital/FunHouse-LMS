@@ -7,8 +7,15 @@ end: an ETL **pipeline** that lands data in PostgreSQL, a portable **Container
 API** that serves it with auth/RBAC/entitlements, and a **Revenue PWA** that
 works offline and syncs back to the API.
 
-Everything is built to run in AWS **af-south-1** (Cape Town) for data-residency
+Everything can be deployed to AWS **af-south-1** (Cape Town) for data-residency
 under POPIA, on a lean footprint targeting **under US$80/month**.
+
+> **Current rollout:** the Container API is verified on Vercel against
+> Supabase. The Revenue PWA is prepared for a separate Vercel project deployed
+> from the `web/` directory; that account-level deployment is the next manual
+> step. The AWS App Runner/RDS/S3/CloudFront infrastructure is retained as the
+> future full-stack deployment path; see
+> [`docs/deployment-runbook.md`](docs/deployment-runbook.md) for both procedures.
 
 ## Architecture overview
 
@@ -26,6 +33,21 @@ Three shipped components:
   **IndexedDB**, runs a **service worker** for offline use, and **syncs** to the
   Container API when back online.
 
+Current rollout topology (after completing the separate PWA project step):
+
+```mermaid
+flowchart LR
+    device["Field device (browser)"] -->|static assets| pwa["Revenue PWA<br/>Vercel · React/Vite"]
+    pwa -->|sync over HTTPS| api["Container API<br/>Vercel · FastAPI"]
+    api --> db["Supabase PostgreSQL"]
+```
+
+This current Vercel/Supabase path does not use or inherit the future AWS
+`af-south-1` residency guarantees below. Confirm the selected Vercel and
+Supabase regions and provider terms separately before making a residency claim.
+
+Future AWS topology:
+
 ```mermaid
 flowchart LR
     device["Field device (browser)"] -->|static assets| cdn["CloudFront + S3<br/>(PWA bundle)"]
@@ -35,8 +57,9 @@ flowchart LR
     pipeline["funhouse_pipeline (ETL)"] --> db
 ```
 
-Data at rest (RDS, S3, SSM) stays in **af-south-1**; the deployment provisions
-no load balancer, EKS/ECS, or monitoring beyond CloudWatch defaults.
+In the future AWS topology, data at rest (RDS, S3, SSM) stays in
+**af-south-1**; the deployment provisions no load balancer, EKS/ECS, or
+monitoring beyond CloudWatch defaults.
 
 ## Repo layout
 
