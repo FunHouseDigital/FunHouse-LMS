@@ -1,41 +1,55 @@
-# FunHouse Deployment Smoke-Test Checklist (Spec 3.5)
+# FunHouse Production PWA Smoke-Test Checklist
 
-Proves the Revenue_PWA syncs to the **live** Container_API end to end after a
-deployment (Req 10). Run it after Step 8 of `docs/deployment-runbook.md`. Every
-step states an **exact action** and an **unambiguous observable pass result** —
-if the observed result differs, the step **FAILS** (Req 10.6).
+Proves the Revenue PWA syncs to the live Container API end to end after a
+deployment. Record each result as **PASS** or **FAIL**. All six steps must pass
+to accept the browser deployment.
 
-**Prerequisites:** the deployment is live; you have the Terraform outputs
-`cloudfront_domain` (PWA URL) and `apprunner_url` (API URL), and a valid test
-login credential seeded in the database.
+## Prerequisites
 
-Record each result as **PASS** / **FAIL**. All six must PASS to accept the
-deployment.
+Record the two exact HTTPS origins, without paths or trailing slashes:
 
-| # | Step | Action | Expected result (PASS) |
+```text
+PWA_ORIGIN=https://<pwa-project>.vercel.app
+API_ORIGIN=https://fun-house-lms.vercel.app
+```
+
+For the current Vercel + Supabase rollout:
+
+- The PWA project was built from repository root directory `web` with
+  `VITE_API_BASE_URL=https://fun-house-lms.vercel.app`.
+- The API project's `FUNHOUSE_CORS_ORIGINS` contains the exact `PWA_ORIGIN`.
+- **Verify Live API Role Access** passes on `main`.
+- You have the seeded manager (`Loyiso`) test password in the password manager.
+  Never write the password in this checklist or browser screenshots.
+- The retained synthetic player `API Verification Canary v1` is visible to the
+  manager. Use only this player for the smoke capture; never use a real learner.
+
+The same checks also apply to a future CloudFront/App Runner deployment by
+substituting its PWA and API origins.
+
+## Browser checks
+
+| # | Step | Exact action | Expected result (PASS) |
 | --- | --- | --- | --- |
-| 1 | **Load PWA over HTTPS** | In a browser, open `https://<cloudfront_domain>`. Then attempt `http://<cloudfront_domain>`. | The app loads over **HTTPS**; the plain `http://` request **redirects to `https://`**; the browser offers **Install** (manifest parsed, service worker registered — check DevTools ▸ Application). — Req 6.2, 6.4, 6.5 |
-| 2 | **Login** | Authenticate through the PWA against the live API with valid test credentials. | Response is **200** and a **JWT is stored**; a protected view renders. An unauthenticated request to a protected endpoint returns **401**. — Req 10.2 |
-| 3 | **Offline capture** | Open DevTools ▸ Network and set **Offline** (or disable the device network). Capture a record in the PWA (e.g. a metric / attendance entry). | The capture **succeeds locally**; the UI confirms an **offline/queued** state; the record is present in **IndexedDB** (DevTools ▸ Application ▸ IndexedDB) with a pending/unsynced flag. — Req 10.3 |
-| 4 | **Sync** | Re-enable the network. Trigger sync (or allow background sync to run). | The PWA issues **`POST https://<apprunner_url>/sync`** returning **HTTP 200**, and the response reports the queued action as **`applied`** (not `rejected`/`conflict`). The record's local state flips to **synced**. — Req 10.4 |
-| 5 | **Read-back through the API** | Query the just-synced record through the API (e.g. the relevant player/history/roster/metrics endpoint), authenticated. | The API returns the record with the **same values that were captured offline** in Step 3 (ids/fields match). — Req 10.5 |
-| 6 | **CORS** | With DevTools ▸ Console + Network open, observe the cross-origin call the PWA (CloudFront origin) makes to the API (App Runner origin) during Steps 2 and 4. | The browser completes the cross-origin request **without any CORS error**; the preflight/response carries **`Access-Control-Allow-Origin`** matching the CloudFront origin. — Req 7.3 |
-
-## Encryption spot-check (supports Req 7.4)
-
-While running the above, confirm every hop is encrypted:
-
-- Step 1/2/4 requests are all **`https://`** (no mixed-content warnings).
-- The API is reachable only over HTTPS (a plain `http://<apprunner_url>` request
-  is refused/redirected — App Runner has no plaintext listener).
+| 1 | **HTTPS and installability** | Open `PWA_ORIGIN`, then refresh the deep link `PWA_ORIGIN/login`. In browser DevTools, open **Application → Manifest** and **Service Workers**. | Both routes load over HTTPS; the manifest has no errors and names **FunHouse Revenue**; `sw.js` is activated for scope `/`; the browser offers **Install** or reports the app as installable. No mixed-content warning appears. |
+| 2 | **Login and protected read** | Sign in as `Loyiso`. Open **Players** and search for `API Verification Canary v1`. In DevTools **Network**, inspect the login and players requests. | `POST API_ORIGIN/auth/login` returns `200`; a JWT-backed session is established; `GET API_ORIGIN/players` returns `200`; the protected Players view renders the synthetic canary. No request is sent to the PWA origin as though it were the API. |
+| 3 | **Offline capture** | While still signed in, open **Log Session** and make sure the canary appears. In DevTools **Network**, select **Offline**. Select `API Verification Canary v1`, `PS5`, `20 min`, **Cash**, amount `0`, then confirm. | Capture succeeds without a network response; the UI confirms it was saved; **Sync status** says one or more items are saved/waiting; the actions are present in **Application → IndexedDB** with an unsynced status. No plaintext password or JWT appears in IndexedDB. |
+| 4 | **Reconnect and sync** | Clear the **Offline** setting. Click **Retry sync** if automatic sync does not start. Watch the Network panel. | The PWA sends `POST API_ORIGIN/sync`, receives `200`, and every canary action reports `applied` (not `rejected` or `conflict`). Sync status returns to **Up to date — no items waiting to sync.** |
+| 5 | **Read-back** | Open **Players**, select `API Verification Canary v1`, and inspect its history. | The API-backed history returns `200` and contains the newly captured `PS5`, 20-minute session and its zero-value cash payment. Values match the offline capture. |
+| 6 | **CORS** | In DevTools **Console** and **Network**, inspect the cross-origin login, players, and sync traffic. Open the sync request's response headers and its OPTIONS preflight when shown. | No CORS error appears. The API response/preflight includes `Access-Control-Allow-Origin` equal to the exact `PWA_ORIGIN`; it is not `*`. All PWA and API requests use HTTPS. |
 
 ## Result
 
-- [ ] Step 1 — Load PWA over HTTPS — **PASS / FAIL**
-- [ ] Step 2 — Login — **PASS / FAIL**
-- [ ] Step 3 — Offline capture — **PASS / FAIL**
-- [ ] Step 4 — Sync (`POST /sync` → 200, `applied`) — **PASS / FAIL**
-- [ ] Step 5 — Read-back through the API — **PASS / FAIL**
-- [ ] Step 6 — CORS (no error, allow-origin present) — **PASS / FAIL**
+- [ ] Step 1 — HTTPS, deep-link fallback, manifest, service worker, installability — **PASS / FAIL**
+- [ ] Step 2 — Login and protected player read — **PASS / FAIL**
+- [ ] Step 3 — Offline synthetic session capture in IndexedDB — **PASS / FAIL**
+- [ ] Step 4 — Reconnect and `POST /sync` → `200` / `applied` — **PASS / FAIL**
+- [ ] Step 5 — Synthetic session read-back — **PASS / FAIL**
+- [ ] Step 6 — Exact-origin CORS and HTTPS — **PASS / FAIL**
 
-**Deployment is accepted only when all six steps PASS.**
+**Deployment is accepted only when all six steps pass.** If a step fails, stop
+before using the PWA with real learner data and record the failed step and HTTP
+status. Preserve the working API and any established PWA deployment, then roll
+back only the component changed. On the first PWA release, keep its generated
+hostname unpublished; remove any alias or disable the new project if needed,
+and remove its exact API CORS origin if abandoning the release.

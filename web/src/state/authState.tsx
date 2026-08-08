@@ -46,13 +46,13 @@ export interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function getDefaultBaseUrl(): string {
-  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
-  const configured = env?.VITE_API_BASE_URL;
+  const configured = import.meta.env.VITE_API_BASE_URL;
   if (configured) return configured;
 
-  // Vercel serves the SPA and FastAPI application from the same HTTPS origin.
-  // Keep localhost pointed at the separate development API, but make deployed
-  // builds work without a build-time VITE_API_BASE_URL setting.
+  // A standalone HTTPS PWA falls back to its own origin, which is valid only
+  // when the API is intentionally served there too. The production split
+  // Vercel deployment must set VITE_API_BASE_URL at build time to the separate
+  // FastAPI origin. Local development keeps using the separate localhost API.
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
     return window.location.origin;
   }

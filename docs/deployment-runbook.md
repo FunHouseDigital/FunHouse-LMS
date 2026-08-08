@@ -1,15 +1,120 @@
 # FunHouse Deployment Runbook (Spec 3.5)
 
-> **Zero-local-tooling deploy:** see [`docs/deploy-from-github.md`](deploy-from-github.md)
+> **Zero-local-tooling AWS deploy:** see [`docs/deploy-from-github.md`](deploy-from-github.md)
 > to deploy the whole stack from the browser via the **Deploy** GitHub Actions
 > workflow (Actions → Deploy → Run workflow) — no local AWS CLI, Terraform,
 > Docker, or Node.js required.
 
 
-The ordered, end-to-end procedure to **stand up, operate, and tear down** the
-FunHouse production deployment on AWS **af-south-1**, strictly within PRD §3.1.
-It is written so a **non-founder operator** can follow it without tribal
-knowledge (Req 9.5).
+## Deploy the current Vercel + Supabase production path
+
+The lowest-risk current deployment keeps the verified FastAPI project at
+`https://fun-house-lms.vercel.app` unchanged and creates a **second Vercel
+project** for the PWA. The same GitHub repository supplies both projects, but
+the PWA project uses `web` as its root directory. AWS remains the future
+full-stack path documented below.
+
+### A. Create the PWA project **[FOUNDER-RUN / VERCEL ACCOUNT]**
+
+1. Open the [Vercel dashboard](https://vercel.com/dashboard), choose **Add New →
+   Project**, and import `FunHouseDigital/FunHouse-LMS` again. Do not modify or
+   unlink the existing API project.
+2. Use a distinct project name such as `funhouse-revenue-pwa` and configure:
+
+   | Setting | Value |
+   | --- | --- |
+   | Production branch | `main` |
+   | Root Directory | `web` |
+   | Framework Preset | `Vite` |
+   | Build Command | `npm run build` |
+   | Output Directory | `dist` |
+
+3. Before deploying, add this **Production** environment variable to the new
+   PWA project:
+
+   ```text
+   VITE_API_BASE_URL=https://fun-house-lms.vercel.app
+   ```
+
+   This is a Vite build-time value. Adding or changing it requires a new PWA
+   deployment. Do not point production builds at a preview API hostname.
+4. Deploy `main`, wait for **Ready**, and record the generated HTTPS origin as
+   `PWA_ORIGIN`, for example `https://funhouse-revenue-pwa.vercel.app`. An
+   origin contains only scheme and hostname: no path and no trailing slash.
+
+### B. Allow the PWA origin on the API **[FOUNDER-RUN / VERCEL ACCOUNT]**
+
+1. In the existing API project, open **Environment Variables** and set
+   `FUNHOUSE_CORS_ORIGINS` for **Production** to the exact `PWA_ORIGIN`.
+   If approved origins already exist, keep them and append the new origin with
+   a comma. Never use `*` because browser credentials are enabled.
+2. Redeploy the existing API project from the reviewed `main` commit. Do not
+   change its `DB_*`, `JWT_*`, Supabase, or TLS variables.
+3. Verify API health and the exact browser preflight before signing in:
+
+   ```bash
+   API_ORIGIN=https://fun-house-lms.vercel.app
+   PWA_ORIGIN=https://<pwa-project>.vercel.app
+
+   curl -fsS "$API_ORIGIN/health"
+   curl -i -X OPTIONS "$API_ORIGIN/auth/login" \
+     -H "Origin: $PWA_ORIGIN" \
+     -H "Access-Control-Request-Method: POST" \
+     -H "Access-Control-Request-Headers: content-type"
+   ```
+
+   Expected: health returns `200`; preflight returns `200` with
+   `access-control-allow-origin: <PWA_ORIGIN>`.
+4. Run **Verify Live API Role Access** from GitHub Actions on `main` after the
+   API redeploy. It must pass before browser acceptance.
+
+### C. Verify static/PWA delivery
+
+```bash
+PWA_ORIGIN=https://<pwa-project>.vercel.app
+curl -fsSI "$PWA_ORIGIN/"
+curl -fsSI "$PWA_ORIGIN/login"               # SPA deep-link fallback
+curl -fsSI "$PWA_ORIGIN/manifest.webmanifest"
+curl -fsSI "$PWA_ORIGIN/sw.js"
+
+ASSET_PATH="$(curl -fsS "$PWA_ORIGIN/" \
+  | grep -oE '/assets/[^" ]+\.(js|css)' | head -n 1)"
+test -n "$ASSET_PATH"
+curl -fsSI "$PWA_ORIGIN$ASSET_PATH"
+```
+
+Expected: every request succeeds over HTTPS. The app shell, deep-link fallback,
+`sw.js`, and manifest return `Cache-Control: public, max-age=0,
+must-revalidate`. The content-hashed asset returns `Cache-Control: public,
+max-age=31536000, immutable`. Complete the browser-only checks in
+[`docs/smoke-test-checklist.md`](smoke-test-checklist.md).
+
+### Vercel rollback and custom-domain rules
+
+- A failed update to an established PWA can be rolled back by promoting its
+  previous working deployment in Vercel.
+- On the **first PWA release**, there is no previous PWA deployment. Keep the
+  generated hostname unpublished until acceptance passes. If it fails, remove
+  any custom alias or disable/delete the new PWA project, remove its exact
+  origin from `FUNHOUSE_CORS_ORIGINS`, and redeploy the API only when that CORS
+  cleanup is required. Leave the existing API deployment otherwise untouched.
+- If the API redeploy fails, restore its previous deployment immediately. If
+  only CORS fails, correct `FUNHOUSE_CORS_ORIGINS` and redeploy; do not alter DB
+  credentials.
+- Add a custom PWA domain only after the generated Vercel hostname passes. Add
+  the custom HTTPS origin to `FUNHOUSE_CORS_ORIGINS` **before** directing users
+  to it, while retaining the generated origin until cutover is verified.
+- Preview PWA URLs are not production origins and are intentionally not
+  wildcarded into CORS.
+
+---
+
+## Future full-stack AWS deployment
+
+The ordered, end-to-end procedure below stands up and operates the FunHouse
+production deployment on AWS **af-south-1**, strictly within PRD §3.1. It is
+retained so AWS can become the full production platform later. It is written so
+a **non-founder operator** can follow it without tribal knowledge (Req 9.5).
 
 > **Live-cloud steps are founder-run.** Steps that touch a real AWS account
 > (marked **[FOUNDER-RUN / LIVE CLOUD]**) require live AWS credentials and are
@@ -18,7 +123,7 @@ knowledge (Req 9.5).
 > scripts, and the migration shim) live in the repo; this document is the
 > procedure to run them.
 
-## Automated deploy (recommended)
+## Automated AWS deploy
 
 For a hands-off first bring-up (or a re-deploy), run the single Windows
 PowerShell script `scripts/deploy.ps1` from the repo root. It performs the whole
