@@ -19,8 +19,9 @@ For the current Vercel + Supabase rollout:
   `VITE_API_BASE_URL=https://fun-house-lms.vercel.app`.
 - The API project's `FUNHOUSE_CORS_ORIGINS` contains the exact `PWA_ORIGIN`.
 - **Verify Live API Role Access** passes on `main`.
-- You have the seeded manager (`Loyiso`) test password in the password manager.
-  Never write the password in this checklist or browser screenshots.
+- You have the seeded manager (`Loyiso`) password from the dedicated
+  `LOYISO_BOOTSTRAP_PASSWORD` password-manager entry. Never write the password
+  in this checklist, browser screenshots, workflow inputs, or chat.
 - The retained synthetic player `API Verification Canary v1` is visible to the
   manager. Use only this player for the smoke capture; never use a real learner.
 

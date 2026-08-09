@@ -89,6 +89,43 @@ must-revalidate`. The content-hashed asset returns `Cache-Control: public,
 max-age=31536000, immutable`. Complete the browser-only checks in
 [`docs/smoke-test-checklist.md`](smoke-test-checklist.md).
 
+### Staff login secrets and Loyiso rotation **[FOUNDER-RUN / GITHUB ACCOUNT]**
+
+Production keeps separate protected GitHub environment secrets for each seeded
+staff credential:
+
+| Seeded login | Role | GitHub `production` environment secret |
+| --- | --- | --- |
+| `Aya` | founder | `BOOTSTRAP_USER_PASSWORD` |
+| `Loyiso` | manager | `LOYISO_BOOTSTRAP_PASSWORD` |
+| `Facilitator` | facilitator | `FACILITATOR_BOOTSTRAP_PASSWORD` |
+
+Never paste these values into workflow inputs, issues, logs, SQL, screenshots,
+or chat. Generate and retain each value in the approved password manager. A
+password must be a single line containing at least 12 characters and at most 72
+UTF-8 bytes.
+
+To establish or change Loyiso's password without changing Aya:
+
+1. In GitHub, open **Settings → Environments → production → Environment
+   secrets** and create or replace `LOYISO_BOOTSTRAP_PASSWORD` with the new
+   password-manager value.
+2. From the `main` branch, run **Rotate Live Loyiso Password** with confirmation
+   `rotate-live-loyiso-password`. The serialized workflow validates the exact
+   seeded `Loyiso` row, manager role, Smithfield scope, and uniqueness under
+   table and row locks before replacing only its bcrypt hash.
+3. Require the workflow's live login probe to pass. Then run **Verify Live API
+   Role Access**, which reads the three distinct protected secrets and verifies
+   founder, manager, and facilitator access.
+4. Sign in to the PWA as `Loyiso` using the password-manager value and complete
+   the offline smoke test. Do not share the password with the deployment
+   operator.
+
+The normal **Initialize Live Supabase Database** workflow remains
+initialization-only and refuses implicit rotation. Selecting `Loyiso` there
+uses `LOYISO_BOOTSTRAP_PASSWORD`; it never falls back to Aya's secret. Password
+rotation does not revoke already-issued JWTs, which remain valid until expiry.
+
 ### Vercel rollback and custom-domain rules
 
 - A failed update to an established PWA can be rolled back by promoting its
