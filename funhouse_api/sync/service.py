@@ -547,7 +547,7 @@ def _apply_entitlement(
 _INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     mapping.ENTITY_SESSION: (
         "player_id", "session_type", "started_at", "ended_at", "duration_minutes",
-        "school_id", "logged_by",
+        "reference", "school_id", "logged_by",
     ),
     mapping.ENTITY_ATTENDANCE: (
         "session_id", "player_id", "attendance_date", "present", "school_id",
@@ -564,11 +564,18 @@ _INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
 
 # Non-identity value columns updated when an incoming action wins LWW (Req 5.1).
 _MUTABLE_COLUMNS: dict[str, tuple[str, ...]] = {
-    mapping.ENTITY_SESSION: ("duration_minutes",),
+    mapping.ENTITY_SESSION: ("duration_minutes", "reference"),
     mapping.ENTITY_ATTENDANCE: ("present",),
     mapping.ENTITY_PAYMENT: ("method",),
     # The measured value is the mutable field; a later edit overwrites it (LWW).
     mapping.ENTITY_STUDENT_METRICS: ("value",),
+}
+
+# Optional mutable fields are updated only when the client included the key.
+# This preserves a stored reference when a winning action from an older PWA
+# version omits it, while still allowing an explicit null to clear the value.
+_OPTIONAL_MUTABLE_COLUMNS: dict[str, frozenset[str]] = {
+    mapping.ENTITY_SESSION: frozenset({"reference"}),
 }
 
 
@@ -771,7 +778,12 @@ def _update_natural(
 ) -> ActionResult:
     """Apply the LWW winner's value fields + audit in one transaction (Req 5.1)."""
     emap = mapping.MAPPINGS[entity]
-    mutable = _MUTABLE_COLUMNS[entity]
+    optional_mutable = _OPTIONAL_MUTABLE_COLUMNS.get(entity, frozenset())
+    mutable = tuple(
+        column
+        for column in _MUTABLE_COLUMNS[entity]
+        if column not in optional_mutable or column in payload
+    )
     set_cols = list(mutable) + ["client_timestamp", "client_id"]
     set_values: list[Any] = [payload.get(c) for c in mutable] + [
         created_at, action.client_id

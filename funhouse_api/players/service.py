@@ -284,7 +284,7 @@ def player_history(conn: Any, scope: Any, player_id: Any) -> PlayerHistory:
         cursor.execute(
             f"""
             SELECT id, session_type, started_at, ended_at, duration_minutes,
-                   school_id, logged_by, location_id
+                   reference, school_id, logged_by, location_id
             FROM sessions
             WHERE {s_where}
             ORDER BY created_at
@@ -298,9 +298,10 @@ def player_history(conn: Any, scope: Any, player_id: Any) -> PlayerHistory:
                 "started_at": r[2],
                 "ended_at": r[3],
                 "duration_minutes": r[4],
-                "school_id": r[5],
-                "logged_by": r[6],
-                "location_id": r[7],
+                "reference": r[5],
+                "school_id": r[6],
+                "logged_by": r[7],
+                "location_id": r[8],
             }
             for r in cursor.fetchall()
         ]

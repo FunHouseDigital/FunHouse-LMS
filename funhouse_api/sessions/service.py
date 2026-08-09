@@ -99,6 +99,7 @@ def log_session(
     player_id: Any,
     session_type: str,
     duration_minutes: int,
+    reference: str | None = None,
     started_at: Any | None = None,
     ended_at: Any | None = None,
     school_id: Any | None = None,
@@ -162,6 +163,7 @@ def log_session(
         "started_at": started_at,
         "ended_at": ended_at,
         "duration_minutes": duration_minutes,
+        "reference": reference,
         "school_id": effective_school,
         "location_id": location_id,
     }
@@ -175,9 +177,9 @@ def log_session(
                 """
                 INSERT INTO sessions
                     (player_id, session_type, started_at, ended_at,
-                     duration_minutes, school_id, logged_by, location_id,
+                     duration_minutes, reference, school_id, logged_by, location_id,
                      device_id, client_timestamp)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -186,6 +188,7 @@ def log_session(
                     clean["started_at"],
                     clean["ended_at"],
                     clean["duration_minutes"],
+                    clean["reference"],
                     clean["school_id"],
                     logged_by,
                     clean["location_id"],
