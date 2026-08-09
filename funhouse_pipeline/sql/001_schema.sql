@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     started_at TIMESTAMPTZ,
     ended_at TIMESTAMPTZ,
     duration_minutes INTEGER,
+    reference TEXT,                              -- console/module/match/lesson reference
     school_id UUID REFERENCES schools(id),          -- school-associated (Req 1.4)
     logged_by UUID REFERENCES users(id),            -- who touched the record (Req 14.5)
     location_id UUID NOT NULL REFERENCES locations(id),

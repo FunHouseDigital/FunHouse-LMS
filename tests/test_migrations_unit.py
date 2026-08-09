@@ -40,6 +40,7 @@ def test_migration_files_are_present_and_ordered():
         "005_public_schema_lockdown.sql",
         "006_consents_function_search_path.sql",
         "007_runtime_role_access.sql",
+        "008_sessions_reference.sql",
     ]
 
 
