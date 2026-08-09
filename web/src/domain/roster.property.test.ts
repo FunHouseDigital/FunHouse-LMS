@@ -6,7 +6,7 @@ import {
   mergePlayerDetail,
   type RosterRow,
 } from './roster';
-import type { BalanceOut, PlayerHistory, PlayerOut } from './types';
+import type { BalanceOut, PlayerHistory, PlayerOut, SessionHistoryOut } from './types';
 
 const nameArb = fc.string({ minLength: 0, maxLength: 12 });
 
@@ -80,7 +80,7 @@ describe('Player detail merge (Property 14)', () => {
         (srvS, srvP, srvD, locS, locP, locD) => {
           const server: PlayerHistory = {
             player_id: 'p1',
-            sessions: srvS,
+            sessions: srvS as SessionHistoryOut[],
             payments: srvP,
             entitlement_draws: srvD,
           };

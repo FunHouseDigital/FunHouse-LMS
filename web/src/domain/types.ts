@@ -180,10 +180,24 @@ export interface BalanceOut {
   status: string;
 }
 
+/** One synchronized session returned by player history. */
+export type SessionHistoryOut = Record<string, unknown> & {
+  id: string;
+  session_type: 'lounge' | 'lesson' | 'kit' | 'esports';
+  started_at: string | null;
+  ended_at: string | null;
+  duration_minutes: number | null;
+  /** PS5/PS4 or the school-session quick-field reference. */
+  reference: string | null;
+  school_id: string | null;
+  logged_by: string | null;
+  location_id: string;
+};
+
 /** `GET /players/{id}/history` response. */
 export interface PlayerHistory {
   player_id: string;
-  sessions: Record<string, unknown>[];
+  sessions: SessionHistoryOut[];
   payments: Record<string, unknown>[];
   entitlement_draws: Record<string, unknown>[];
 }

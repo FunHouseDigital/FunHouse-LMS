@@ -51,6 +51,7 @@ class SessionCreate(BaseModel):
     player_id: UUID
     session_type: str
     duration_minutes: int
+    reference: str | None = None
     started_at: datetime | None = None
     ended_at: datetime | None = None
     school_id: UUID | None = None
@@ -113,6 +114,7 @@ def create_session(
             player_id=str(body.player_id),
             session_type=body.session_type,
             duration_minutes=body.duration_minutes,
+            reference=body.reference,
             started_at=body.started_at,
             ended_at=body.ended_at,
             school_id=None if body.school_id is None else str(body.school_id),
