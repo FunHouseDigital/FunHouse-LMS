@@ -1,13 +1,15 @@
-"""Safely initialize a seeded user's password without implicit rotation.
+"""Safely initialize seeded passwords and explicitly rotate Loyiso's password.
 
-This one-off command is intended for controlled deployment automation after the
-schema and reference seed have been applied. It reads the plaintext password
-only from the environment and never prints or stores it; only the bcrypt hash is
-persisted.
+This command is intended for controlled deployment automation after the schema
+and reference seed have been applied. It reads plaintext passwords only from the
+environment and never prints or stores them; only bcrypt hashes are persisted.
+Initialization fails closed when a different hash already exists. Rotation is a
+separate, explicit CLI mode restricted to the seeded Loyiso manager account.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from collections.abc import Mapping, Sequence
@@ -23,6 +25,7 @@ _MAX_BCRYPT_BYTES = 72
 _EXPECTED_USER_ROLES = {user.name: user.role for user in SEED_USERS}
 _EXPECTED_USER_SCHOOLS = {user.name: user.school_name for user in SEED_USERS}
 _ALLOWED_USER_NAMES = frozenset(_EXPECTED_USER_ROLES)
+_ROTATABLE_USER_NAMES = frozenset({"Loyiso"})
 
 
 class BootstrapError(RuntimeError):
@@ -36,22 +39,30 @@ def _required_env(env: Mapping[str, str], name: str) -> str:
     return value
 
 
-
 def bootstrap_user(
     conn: Any,
     *,
     name: str,
     password: str,
+    rotate_existing: bool = False,
 ) -> str:
     """Initialize one seeded user's bcrypt hash and return the outcome.
 
-    A same-password rerun is a no-op. An existing different password always
-    fails closed; credential rotation uses a separate recovery procedure.
+    A same-password rerun is a no-op. An existing different password fails
+    closed unless explicit rotation is enabled for an approved account. The
+    rotation allowlist currently contains only the seeded Loyiso manager.
     """
     if name not in _ALLOWED_USER_NAMES:
         allowed = ", ".join(sorted(_ALLOWED_USER_NAMES))
         raise BootstrapError(f"BOOTSTRAP_USER_NAME must be one of: {allowed}")
+    if rotate_existing and name not in _ROTATABLE_USER_NAMES:
+        rotatable = ", ".join(sorted(_ROTATABLE_USER_NAMES))
+        raise BootstrapError(f"password rotation is restricted to seeded users: {rotatable}")
     expected_role = _EXPECTED_USER_ROLES[name]
+    if "\r" in password or "\n" in password:
+        raise BootstrapError(
+            "BOOTSTRAP_USER_PASSWORD must be a single-line password without CR or LF characters"
+        )
     if len(password) < _MIN_PASSWORD_CHARS:
         raise BootstrapError(
             f"BOOTSTRAP_USER_PASSWORD must contain at least {_MIN_PASSWORD_CHARS} characters"
@@ -63,6 +74,9 @@ def bootstrap_user(
 
     try:
         with conn.cursor() as cursor:
+            # Block concurrent user inserts/updates while uniqueness, seeded
+            # metadata, and the target UUID are checked and changed.
+            cursor.execute("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
             cursor.execute(
                 """
                 SELECT users.id, users.role, users.password_hash, locations.name,
@@ -97,7 +111,7 @@ def bootstrap_user(
                 )
             if existing_hash and verify_password(password, existing_hash):
                 outcome = "already initialized; unchanged"
-            elif existing_hash:
+            elif existing_hash and not rotate_existing:
                 raise BootstrapError(
                     f"{name!r} already has a different password; bootstrap will not replace it"
                 )
@@ -110,7 +124,7 @@ def bootstrap_user(
                     """,
                     (hash_password(password), user_id),
                 )
-                outcome = "initialized"
+                outcome = "rotated" if existing_hash else "initialized"
         conn.commit()
     except Exception:
         conn.rollback()
@@ -124,33 +138,53 @@ def apply(
     config_path: str | None = None,
     *,
     env: Mapping[str, str] | None = None,
+    rotate_loyiso_password: bool = False,
 ) -> int:
-    """Load configuration and bootstrap the requested seeded user."""
+    """Load configuration and initialize or explicitly rotate a seeded login."""
     env = os.environ if env is None else env
     name = _required_env(env, "BOOTSTRAP_USER_NAME")
     password = _required_env(env, "BOOTSTRAP_USER_PASSWORD")
+    if rotate_loyiso_password and name != "Loyiso":
+        raise BootstrapError("--rotate-loyiso-password requires BOOTSTRAP_USER_NAME=Loyiso")
     config = load_config(config_path, env=env)
 
+    action = "Rotating" if rotate_loyiso_password else "Bootstrapping"
     print(
-        f"Bootstrapping {name!r} in {config.database.host}:{config.database.port}"
+        f"{action} {name!r} in {config.database.host}:{config.database.port}"
         f"/{config.database.dbname} (sslmode={config.database.sslmode})"
     )
 
     conn = connect(config)
     try:
         assume_maintenance_role(conn, env=env)
-        bootstrap_user(conn, name=name, password=password)
+        bootstrap_user(
+            conn,
+            name=name,
+            password=password,
+            rotate_existing=rotate_loyiso_password,
+        )
     finally:
         conn.close()
     return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI wrapper: optional first argument is a config-file path."""
-    args = list(sys.argv[1:] if argv is None else argv)
-    config_path = args[0] if args else None
+    """CLI wrapper with an explicit, Loyiso-only password rotation mode."""
+    parser = argparse.ArgumentParser(
+        description="Initialize a seeded login or explicitly rotate Loyiso's password."
+    )
+    parser.add_argument("config_path", nargs="?", help="optional configuration file")
+    parser.add_argument(
+        "--rotate-loyiso-password",
+        action="store_true",
+        help="replace Loyiso's existing bcrypt hash after all account checks pass",
+    )
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
-        return apply(config_path)
+        return apply(
+            args.config_path,
+            rotate_loyiso_password=args.rotate_loyiso_password,
+        )
     except BootstrapError as exc:
         print(f"Bootstrap refused: {exc}", file=sys.stderr)
         return 2

@@ -32,13 +32,15 @@ jobs:
 
     steps:
       - name: Require main branch and explicit confirmation
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::Run this production workflow from the main branch."
             exit 1
           fi
-          if [ "${{ inputs.confirmation }}" != "verify-live-api-role-access" ]; then
+          if [ "$CONFIRMATION" != "verify-live-api-role-access" ]; then
             echo "::error::Live API role verification confirmation did not match."
             exit 1
           fi
@@ -49,6 +51,7 @@ jobs:
       - name: Verify protected reads and idempotent writes
         env:
           BOOTSTRAP_USER_PASSWORD: ${{ secrets.BOOTSTRAP_USER_PASSWORD }}
+          LOYISO_BOOTSTRAP_PASSWORD: ${{ secrets.LOYISO_BOOTSTRAP_PASSWORD }}
           FACILITATOR_BOOTSTRAP_PASSWORD: ${{ secrets.FACILITATOR_BOOTSTRAP_PASSWORD }}
         run: python3 -m funhouse_pipeline.verify_live_api_rbac
 

@@ -333,7 +333,8 @@ def verify(env: Mapping[str, str] | None = None) -> int:
     """Run the production role acceptance probe using environment-only secrets."""
     env = os.environ if env is None else env
     api_url = _validate_api_url(env.get("VERCEL_API_URL", _DEFAULT_API_URL))
-    shared_password = _required_env(env, "BOOTSTRAP_USER_PASSWORD")
+    founder_password = _required_env(env, "BOOTSTRAP_USER_PASSWORD")
+    manager_password = _required_env(env, "LOYISO_BOOTSTRAP_PASSWORD")
     facilitator_password = _required_env(env, "FACILITATOR_BOOTSTRAP_PASSWORD")
     opener = urllib.request.build_opener(_NoRedirects)
 
@@ -342,14 +343,14 @@ def verify(env: Mapping[str, str] | None = None) -> int:
             opener,
             api_url,
             name="Aya",
-            password=shared_password,
+            password=founder_password,
             expected_role="founder",
         ),
         _login(
             opener,
             api_url,
             name="Loyiso",
-            password=shared_password,
+            password=manager_password,
             expected_role="manager",
         ),
         _login(
