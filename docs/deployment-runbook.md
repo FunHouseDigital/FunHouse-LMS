@@ -332,7 +332,7 @@ Expected output — the created / already-present report, e.g.:
 
 ```
 Applying migrations to <host>:5432/funhouse (sslmode=require)
-Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql, 007_runtime_role_access.sql
+Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql, 007_runtime_role_access.sql, 008_sessions_reference.sql
   Created: locations, schools, users, players, guardians, consents, products, entitlements, sessions, attendance, payments, lessons, student_metrics, sync_log
   Already present: (none)
 ```
