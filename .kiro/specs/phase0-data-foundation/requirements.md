@@ -22,7 +22,7 @@ The subjects of much of this data are minors, so POPIA-aligned data protection i
 - **Source_Folder**: The input directory containing one subfolder per source type: `cards/`, `sheets/`, `lessons/`, `photos/`, `whatsapp/`.
 - **Extracted_Record**: A single structured row produced by the Extractor, carrying a confidence score and provenance to its source file.
 - **Confidence_Score**: A numeric value between 0 and 1 attached to each Extracted_Record by the Extractor, representing extraction certainty.
-- **Pricing_Tier**: A known valid amount-and-product combination: R10 for 20 minutes, R30 for 1 hour, R50 for 2 hours, R350 per month for a subscription (group of 4).
+- **Pricing_Tier**: A known valid amount-and-product combination: R10 for 20 minutes, R30 for 1 hour, R50 for 2 hours, R350 per month for a subscription (group of 4), or R250 for a Holiday Special pass.
 - **Player**: A person who is a learner, a lounge customer, or both. Students and lounge customers share ONE table; a person who is both is a single row with one combined history.
 - **Consent_Ledger**: The `consents` table, an append-only record where revocations are added as new rows and no row is ever deleted or overwritten.
 - **Student_Metric**: A measured learning outcome with `metric_type` restricted to: `typing_wpm`, `typing_accuracy`, `homework_done`, `quiz_score`, `observation`.
@@ -55,7 +55,7 @@ The subjects of much of this data are minors, so POPIA-aligned data protection i
 1. WHEN the seed step runs, THE Pipeline SHALL insert a `locations` row for Row 1 (Smithfield).
 2. WHEN the seed step runs, THE Pipeline SHALL insert `schools` rows for Mofulatshepe, Relebohile-Sibulele, and Smithfield Primary with `contract_status` set to `partner`.
 3. WHEN the seed step runs, THE Pipeline SHALL insert `schools` rows for Thabo-Vuyo, Naledi, Rouxville Primary, and JB Tyu with `contract_status` set to `proposed`.
-4. WHEN the seed step runs, THE Pipeline SHALL insert `products` rows for: PayPerUse-20min at R10, PayPerUse-1hr at R30, PayPerUse-2hr at R50, Subscription at R350, and Holiday Special.
+4. WHEN the seed step runs, THE Pipeline SHALL insert `products` rows for: PayPerUse-20min at R10, PayPerUse-1hr at R30, PayPerUse-2hr at R50, Subscription at R350, and Holiday Special at R250.
 5. THE Pipeline SHALL record the Subscription product rules as 4 members, 2 hours per week, and a 3-month minimum term.
 6. THE Pipeline SHALL record the Holiday Special product rules as 3 hours per week, reset on Sunday, no rollover, and a fixed window.
 7. WHEN the seed step runs, THE Pipeline SHALL insert a `users` row for Aya with role `founder` and a `users` row for Loyiso with role `manager`.

@@ -57,6 +57,7 @@ def test_product_definitions_match_design():
 
     holiday = by_name["Holiday Special"]
     assert holiday.type == "once_off_pass"
+    assert holiday.price_cents == 25000
     assert holiday.rules == {
         "hours_per_week": 3,
         "reset": "sunday",

@@ -58,7 +58,7 @@ Rules
     A ``payments`` record whose ``amount`` matches no ``Pricing_Tier`` and no
     product price. Matching rule (documented): known amounts are the **positive**
     product prices in cents (e.g. R10->1000, R30->3000, R50->5000,
-    R350->35000). An input amount is normalized to candidate cent values:
+    R250->25000, R350->35000). An input amount is normalized to candidate cent values:
 
       * ``"R30"`` / ``"R30.00"`` -> Rand -> ``3000`` cents (the ``R`` prefix
         fixes the unit).
@@ -216,8 +216,7 @@ def _has_impossible_date(record: ExtractedRecord, *, reference: date) -> bool:
 def _known_amount_cents(rules: BusinessRules) -> frozenset[int]:
     """The set of valid amounts (in cents) from products + pricing tiers.
 
-    Only **positive** prices count as valid tiers (a placeholder 0-cent product
-    such as the unpriced Holiday Special is not a matchable amount).
+    Only **positive** prices count as valid tiers.
     """
     cents: set[int] = set()
     for product in rules.products:

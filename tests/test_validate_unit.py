@@ -147,14 +147,14 @@ def test_lessons_never_name_checked():
 
 
 def test_amount_rand_prefixed_matches_tier():
-    for amount in ("R10", "R30", "R50", "R350", "R30.00"):
+    for amount in ("R10", "R30", "R50", "R250", "R350", "R30.00"):
         r = _validate(_rec("payments", {"player_name": "Thabo Mokoena", "amount": amount}))
         assert AMOUNT_NO_TIER not in r.reasons, amount
 
 
 def test_amount_bare_number_matches_as_rand_or_cents():
     # "30" (rands) and 3000 (cents) both resolve to the R30 tier.
-    for amount in ("30", 30, 3000, "3000", 50, "350"):
+    for amount in ("30", 30, 3000, "3000", 50, "250", 25000, "350"):
         r = _validate(_rec("payments", {"player_name": "Thabo Mokoena", "amount": amount}))
         assert AMOUNT_NO_TIER not in r.reasons, amount
 

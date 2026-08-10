@@ -46,8 +46,8 @@ _KNOWN_NAMES = ("Thabo Mokoena", "Naledi Dlamini", "Sipho Ndlovu", "Aya Nkosi")
 _KNOWN_NORM = frozenset(normalize_name(n) for n in _KNOWN_NAMES)
 _RULES = build_business_rules(known_player_names=_KNOWN_NAMES)
 
-# Known valid amounts: R10/R30/R50/R350 -> {10,30,50,350} rands / {1000,3000,5000,35000} cents.
-_MATCHING_AMOUNTS = {10, 30, 50, 350, 1000, 3000, 5000, 35000}
+# Known valid amounts: R10/R30/R50/R250/R350 in both Rand and cent forms.
+_MATCHING_AMOUNTS = {10, 30, 50, 250, 350, 1000, 3000, 5000, 25000, 35000}
 
 # --------------------------------------------------------------------------- #
 # Building-block strategies
@@ -81,7 +81,9 @@ _any_date_value = st.one_of(
 
 _any_amount = st.one_of(
     st.none(),
-    st.sampled_from(["R10", "R30", "R50", "R350", "30", "50", 3000, 5000, 35000]),
+    st.sampled_from(
+        ["R10", "R30", "R50", "R250", "R350", "30", "50", "250", 3000, 5000, 25000, 35000]
+    ),
     st.sampled_from(["R99", "77", 12345, "not-a-number", ""]),
 )
 
