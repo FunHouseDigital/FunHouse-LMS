@@ -41,6 +41,7 @@ def test_migration_files_are_present_and_ordered():
         "006_consents_function_search_path.sql",
         "007_runtime_role_access.sql",
         "008_sessions_reference.sql",
+        "009_holiday_special_price.sql",
     ]
 
 

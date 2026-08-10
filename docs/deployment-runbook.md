@@ -332,13 +332,21 @@ Expected output — the created / already-present report, e.g.:
 
 ```
 Applying migrations to <host>:5432/funhouse (sslmode=require)
-Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql, 007_runtime_role_access.sql, 008_sessions_reference.sql
+Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql, 007_runtime_role_access.sql, 008_sessions_reference.sql, 009_holiday_special_price.sql
   Created: locations, schools, users, players, guardians, consents, products, entitlements, sessions, attendance, payments, lessons, student_metrics, sync_log
   Already present: (none)
 ```
 
 Re-running is a safe no-op (idempotent): a second run reports `Created: (none)`
 and lists the tables under `Already present` (Req 3.2).
+
+Migration `009_holiday_special_price.sql` updates the existing Holiday Special
+catalog row in place to `price_cents = 25000` (R250.00). It does not replace the
+product or rewrite historical payment amounts or entitlements. After applying
+it in production, every active Revenue PWA sales device must be online and use
+**Refresh data** (or sign out and back in), then wait for the updated reference-
+data timestamp before recording a Holiday Special sale. This replaces any
+cached R0 catalog entry with the approved price.
 
 ### Migrations 005-007 security contract and Supabase rollout
 

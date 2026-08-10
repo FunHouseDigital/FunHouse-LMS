@@ -490,15 +490,15 @@ Seeding is idempotent: each row is inserted only if a row with the same natural 
 | `locations` | Row 1 = **Smithfield** (Req 2.1) | `name` |
 | `schools` (`partner`) | Mofulatshepe, Relebohile-Sibulele, Smithfield Primary (Req 2.2) | `name` |
 | `schools` (`proposed`) | Thabo-Vuyo, Naledi, Rouxville Primary, JB Tyu (Req 2.3) | `name` |
-| `products` | PayPerUse-20min (R10), PayPerUse-1hr (R30), PayPerUse-2hr (R50), Subscription (R350), Holiday Special (Req 2.4) | `name` |
+| `products` | PayPerUse-20min (R10), PayPerUse-1hr (R30), PayPerUse-2hr (R50), Subscription (R350), Holiday Special (R250) (Req 2.4) | `name` |
 | `users` | Aya (`founder`), Loyiso (`manager`) (Req 2.7) | `email`/`name` |
 
 Product rules stored in `products.rules` JSONB:
 - **Subscription** (Req 2.5): `{"members": 4, "hours_per_week": 2, "min_term_months": 3}`, `price_cents = 35000`.
-- **Holiday Special** (Req 2.6): `{"hours_per_week": 3, "reset": "sunday", "rollover": false, "fixed_window": true}`.
+- **Holiday Special** (Req 2.6): `price_cents = 25000`, `{"hours_per_week": 3, "reset": "sunday", "rollover": false, "fixed_window": true}`.
 - Pay-per-use (Req 2.4): `PayPerUse-20min` 1000, `PayPerUse-1hr` 3000, `PayPerUse-2hr` 5000 cents; `type = pay_per_use`.
 
-`Pricing_Tier` set used by the Validator is derived from these seeded products: {R10/20min, R30/1hr, R50/2hr, R350/subscription}.
+`Pricing_Tier` set used by the Validator is derived from these seeded products: {R10/20min, R30/1hr, R50/2hr, R350/subscription, R250/Holiday Special}.
 
 ### CSV intermediate schemas (Extract output)
 

@@ -62,12 +62,6 @@ class SeedProduct:
 
 
 # products (Req 2.4-2.6). Natural identity = name.
-#
-# Holiday Special price: neither the requirements (Req 2.4 lists it without a
-# price) nor the design/PRD specifies a price for the Holiday Special product —
-# only its rules are given (Req 2.6). price_cents is NOT NULL in the schema, so
-# per the task guidance we seed it as 0 (a placeholder to be corrected once the
-# business confirms the amount) rather than inventing a figure.
 SEED_PRODUCTS: tuple[SeedProduct, ...] = (
     SeedProduct("PayPerUse-20min", "pay_per_use", 1000),
     SeedProduct("PayPerUse-1hr", "pay_per_use", 3000),
@@ -81,7 +75,7 @@ SEED_PRODUCTS: tuple[SeedProduct, ...] = (
     SeedProduct(
         "Holiday Special",
         "once_off_pass",
-        0,  # unspecified in PRD/design; placeholder pending business confirmation.
+        25000,
         {"hours_per_week": 3, "reset": "sunday", "rollover": False, "fixed_window": True},
     ),
 )
