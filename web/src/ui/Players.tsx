@@ -131,11 +131,7 @@ export function Players() {
           );
           return (
             <li key={row.id} data-player-row={row.id}>
-              {row.isLocal ? (
-                content
-              ) : (
-                <Link to={`/players/${encodeURIComponent(row.id)}`}>{content}</Link>
-              )}
+              <Link to={`/players/${encodeURIComponent(row.id)}`}>{content}</Link>
             </li>
           );
         })}
