@@ -60,13 +60,16 @@ async function loadRosterRows(
   return players.map((player) => {
     const balances = balancesByPlayer[player.id];
     const activityId = player.resolvedId ?? player.id;
+    const awaitsServerId = player.source === 'local' && !player.resolvedId;
     return {
-      id: player.id,
+      // Once sync has resolved a local registration, use the server id so the
+      // stale local roster mirror can still open the server-backed history.
+      id: activityId,
       name: player.name,
       balance: summariseBalance(balances),
       lastVisit: lastVisitByPlayer[activityId] ?? null,
-      entitlementStatus: player.source === 'local' ? 'pending sync' : summariseStatus(balances),
-      ...(player.source === 'local' ? { isLocal: true } : {}),
+      entitlementStatus: awaitsServerId ? 'pending sync' : summariseStatus(balances),
+      ...(awaitsServerId ? { isLocal: true } : {}),
     };
   });
 }
@@ -111,24 +114,31 @@ export function Players() {
       {loaded && rows.length === 0 && <p role="status">No players yet.</p>}
 
       <ul aria-label="Player roster">
-        {visible.map((row) => (
-          <li key={row.id} data-player-row={row.id}>
-            {row.isLocal ? (
+        {visible.map((row) => {
+          const content = (
+            <>
               <span>{row.name}</span>
-            ) : (
-              <Link to={`/players/${encodeURIComponent(row.id)}`}>{row.name}</Link>
-            )}
-            <span data-field="balance">
-              {row.balance === null
-                ? 'no entitlement'
-                : row.balance === 'unlimited'
-                  ? 'unlimited'
-                  : `${row.balance} min`}
-            </span>
-            <span data-field="last-visit">{row.lastVisit ?? 'never'}</span>
-            <span data-field="status">{row.entitlementStatus}</span>
-          </li>
-        ))}
+              <span data-field="balance">
+                {row.balance === null
+                  ? 'no entitlement'
+                  : row.balance === 'unlimited'
+                    ? 'unlimited'
+                    : `${row.balance} min`}
+              </span>
+              <span data-field="last-visit">{row.lastVisit ?? 'never'}</span>
+              <span data-field="status">{row.entitlementStatus}</span>
+            </>
+          );
+          return (
+            <li key={row.id} data-player-row={row.id}>
+              {row.isLocal ? (
+                content
+              ) : (
+                <Link to={`/players/${encodeURIComponent(row.id)}`}>{content}</Link>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
