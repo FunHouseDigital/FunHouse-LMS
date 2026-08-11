@@ -82,8 +82,10 @@ export function Metrics() {
   return (
     <section aria-label="Metrics" data-screen-body="metrics">
       <h1>Metrics Entry</h1>
+      <p className="screen-intro">Record typing speed and accuracy against registered learners.</p>
 
-      <table>
+      <div className="table-scroll">
+        <table>
         <thead>
           <tr>
             <th scope="col">Student</th>
@@ -144,7 +146,8 @@ export function Metrics() {
             );
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
 
       <button type="button" onClick={() => setRows((prev) => [...prev, newRow()])}>
         Add row

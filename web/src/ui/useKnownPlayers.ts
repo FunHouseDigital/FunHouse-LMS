@@ -101,19 +101,66 @@ export async function loadKnownPlayers({
   ];
 }
 
-export function useKnownPlayers(options: { includeLocal?: boolean } = {}): PlayerChoice[] {
+export interface KnownPlayersState {
+  players: PlayerChoice[];
+  /** True once the current account-scoped cache/local hydration has completed. */
+  loaded: boolean;
+  /** True when the current account-scoped player directory could not be read. */
+  error: boolean;
+}
+
+interface KnownPlayersSnapshot extends KnownPlayersState {
+  key: string;
+}
+
+/**
+ * Load known players while exposing whether the current scope has hydrated.
+ * Existing callers that only need the array can continue using
+ * {@link useKnownPlayers}.
+ */
+export function useKnownPlayersState(
+  options: { includeLocal?: boolean } = {},
+): KnownPlayersState {
   const { includeLocal = true } = options;
   const { revision, playersCacheKey, cacheScope } = useReferenceData();
-  const [players, setPlayers] = useState<PlayerChoice[]>([]);
+  const stateKey = `${playersCacheKey}\u0000${cacheScope ?? ''}\u0000${String(includeLocal)}`;
+  const [snapshot, setSnapshot] = useState<KnownPlayersSnapshot>({
+    key: stateKey,
+    players: [],
+    loaded: false,
+    error: false,
+  });
 
   useEffect(() => {
     let alive = true;
     let sequence = 0;
     const reload = () => {
       const request = ++sequence;
-      void loadKnownPlayers({ playersCacheKey, cacheScope, includeLocal }).then((loaded) => {
-        if (alive && request === sequence) setPlayers(loaded);
-      });
+      void loadKnownPlayers({ playersCacheKey, cacheScope, includeLocal })
+        .then((loaded) => {
+          if (alive && request === sequence) {
+            setSnapshot({
+              key: stateKey,
+              players: loaded,
+              loaded: true,
+              error: false,
+            });
+          }
+        })
+        .catch(() => {
+          if (alive && request === sequence) {
+            setSnapshot((current) =>
+              current.key === stateKey
+                ? { ...current, loaded: true, error: true }
+                : {
+                    key: stateKey,
+                    players: [],
+                    loaded: true,
+                    error: true,
+                  },
+            );
+          }
+        });
     };
     reload();
     const unsubscribe = subscribePlayerDirectoryChanged(cacheScope, reload);
@@ -121,7 +168,18 @@ export function useKnownPlayers(options: { includeLocal?: boolean } = {}): Playe
       alive = false;
       unsubscribe();
     };
-  }, [cacheScope, includeLocal, playersCacheKey, revision]);
+  }, [cacheScope, includeLocal, playersCacheKey, revision, stateKey]);
 
-  return players;
+  if (snapshot.key !== stateKey) {
+    return { players: [], loaded: false, error: false };
+  }
+  return {
+    players: snapshot.players,
+    loaded: snapshot.loaded,
+    error: snapshot.error,
+  };
+}
+
+export function useKnownPlayers(options: { includeLocal?: boolean } = {}): PlayerChoice[] {
+  return useKnownPlayersState(options).players;
 }

@@ -46,7 +46,7 @@ export function Learners() {
   return (
     <section aria-label="Learners" data-screen-body="learners">
       <h1>Learners</h1>
-      <p>Only learners assigned to your school are shown.</p>
+      <p className="screen-intro">Only learners assigned to your school are shown.</p>
       <label>
         Search learners
         <input
@@ -56,7 +56,11 @@ export function Learners() {
         />
       </label>
 
-      {loaded && learners.length === 0 && <p>No learners are assigned to this school.</p>}
+      {loaded && learners.length === 0 && <p role="status">No learners are assigned to this school.</p>}
+      {!loaded && <p role="status">Loading learners…</p>}
+      {loaded && learners.length > 0 && visible.length === 0 && (
+        <p role="status">No learners match “{search.trim()}”.</p>
+      )}
       <ul aria-label="Learner roster">
         {visible.map((learner) => (
           <li key={learner.id}>

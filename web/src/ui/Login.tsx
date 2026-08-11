@@ -42,8 +42,9 @@ export function Login() {
   }
 
   return (
-    <main>
-      <h1>Log in</h1>
+    <section className="login-screen" aria-labelledby="login-title">
+      <h1 id="login-title">Log in</h1>
+      <p className="screen-intro">Secure access to your FunHouse operations workspace.</p>
       <form onSubmit={onSubmit} noValidate aria-label="Login form">
         <div>
           <label htmlFor="identifier">Identifier</label>
@@ -93,7 +94,7 @@ export function Login() {
           {submitting ? 'Signing in…' : 'Log in'}
         </button>
       </form>
-    </main>
+    </section>
   );
 }
 

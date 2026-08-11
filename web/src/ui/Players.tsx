@@ -100,8 +100,9 @@ export function Players() {
   return (
     <section aria-label="Players" data-screen-body="players">
       <h1>Players</h1>
+      <p className="screen-intro">Find players, review balances and activity, or add someone new.</p>
 
-      <Link to="/register">Add player</Link>
+      <Link className="button-link" to="/register">Add player</Link>
 
       <input
         type="search"
@@ -112,6 +113,10 @@ export function Players() {
       />
 
       {loaded && rows.length === 0 && <p role="status">No players yet.</p>}
+      {!loaded && <p role="status">Loading players…</p>}
+      {loaded && rows.length > 0 && visible.length === 0 && (
+        <p role="status">No players match “{search.trim()}”.</p>
+      )}
 
       <ul aria-label="Player roster">
         {visible.map((row) => {

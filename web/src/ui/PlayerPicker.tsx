@@ -45,7 +45,7 @@ export function PlayerPicker({
   const listLabel = idSuffix ? `Players ${idSuffix}` : 'Players';
 
   return (
-    <div>
+    <div className="player-picker">
       <input
         type="search"
         aria-label={searchLabel}

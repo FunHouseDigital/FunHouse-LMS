@@ -67,6 +67,7 @@ export function Registration() {
   return (
     <section aria-label="Registration" data-screen-body="registration">
       <h1>Add player</h1>
+      <p className="screen-intro">Create an offline-ready player profile and record guardian consent.</p>
 
       <label>
         Player name
