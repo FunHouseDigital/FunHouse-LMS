@@ -110,6 +110,7 @@ export function Alerts() {
   return (
     <section aria-label="Alerts" data-screen-body="alerts">
       <h1>Alerts</h1>
+      <p className="screen-intro">Operational signals that may need follow-up across your account.</p>
 
       {cached && (
         <p role="status" data-field="cached-indicator">

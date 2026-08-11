@@ -81,6 +81,7 @@ export function Attendance() {
   return (
     <section aria-label="Attendance" data-screen-body="attendance">
       <h1>Attendance & Sessions</h1>
+      <p className="screen-intro">Run a school session and mark the learners who are present.</p>
 
       <fieldset>
         <legend>Session type</legend>

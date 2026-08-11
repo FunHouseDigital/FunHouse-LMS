@@ -188,6 +188,7 @@ export function RevenueDashboard() {
   return (
     <section aria-label="Revenue Dashboard" data-screen-body="revenue">
       <h1>Revenue Dashboard</h1>
+      <p className="screen-intro">Track revenue across lounge sales, subscriptions, and school contracts.</p>
 
       {cached && (
         <p role="status" data-field="cached-indicator">
@@ -201,7 +202,7 @@ export function RevenueDashboard() {
         </p>
       )}
 
-      <div>
+      <div className="filter-bar">
         <label>
           Period
           <select

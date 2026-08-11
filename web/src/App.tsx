@@ -18,15 +18,31 @@ import { ReferenceDataProvider } from './state/referenceDataState';
 import { AppShellNav } from './ui/AppShellNav';
 import { ReferenceDataStatus } from './ui/ReferenceDataStatus';
 import { AppRoutes } from './ui/AppRoutes';
+import { useAuth } from './state/authState';
 
 export function AppShell() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <SyncStatusProvider>
       <ServicesProvider>
         <ReferenceDataProvider>
-          <AppShellNav />
-          <ReferenceDataStatus />
-          <AppRoutes />
+          <a className="skip-link" href="#main-content">
+            Skip to content
+          </a>
+          <div className={`app-shell ${isAuthenticated ? 'is-authenticated' : 'is-guest'}`}>
+            <AppShellNav />
+            <div className="app-workspace">
+              {isAuthenticated && (
+                <div className="app-statusbar">
+                  <ReferenceDataStatus />
+                </div>
+              )}
+              <main id="main-content" tabIndex={-1}>
+                <AppRoutes />
+              </main>
+            </div>
+          </div>
         </ReferenceDataProvider>
       </ServicesProvider>
     </SyncStatusProvider>

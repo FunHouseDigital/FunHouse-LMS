@@ -47,6 +47,7 @@ export function Today() {
   return (
     <section aria-label="Today" data-screen-body="today">
       <h1>Today</h1>
+      <p className="screen-intro">A live view of today’s lounge activity on this device.</p>
 
       <p data-field="cash-total">
         Cash today: <strong>{formatRand(totals.cashTotalCents)}</strong>

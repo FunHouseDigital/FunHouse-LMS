@@ -24,21 +24,33 @@ export function AppShellNav() {
   const screens = navScreensFor(state);
 
   return (
-    <nav aria-label="Primary">
-      <ul>
-        {screens.map((screen) => (
-          <li key={screen.id}>
-            <NavLink to={screen.path} data-screen={screen.id}>
-              {screen.label}
-            </NavLink>
-          </li>
-        ))}
-      </ul>
-      <SyncStatusSurface />
-      <button type="button" onClick={logout}>
-        Log out
-      </button>
-    </nav>
+    <aside className="app-sidebar">
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true">FH</span>
+        <span className="brand-copy">
+          <span className="brand-name">FunHouse</span>
+          <span className="brand-tagline">Revenue workspace</span>
+        </span>
+      </div>
+      <nav aria-label="Primary">
+        <ul className="primary-links">
+          {screens.map((screen) => (
+            <li key={screen.id}>
+              <NavLink to={screen.path} data-screen={screen.id}>
+                {screen.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+        <div className="sidebar-utility">
+          {role && <span className="role-chip">{role}</span>}
+          <SyncStatusSurface />
+          <button className="sidebar-logout" type="button" onClick={logout}>
+            Log out
+          </button>
+        </div>
+      </nav>
+    </aside>
   );
 }
 

@@ -127,6 +127,7 @@ export function LogSession() {
   return (
     <section aria-label="Log Session" data-screen-body="log-session">
       <h1>Log Session</h1>
+      <p className="screen-intro">Capture lounge play, payment, and console details—even while offline.</p>
 
       <fieldset>
         <legend>Player</legend>
