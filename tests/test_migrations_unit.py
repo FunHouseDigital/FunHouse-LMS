@@ -42,6 +42,7 @@ def test_migration_files_are_present_and_ordered():
         "007_runtime_role_access.sql",
         "008_sessions_reference.sql",
         "009_holiday_special_price.sql",
+        "010_sync_log_client_id.sql",
     ]
 
 
