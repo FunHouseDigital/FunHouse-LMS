@@ -56,6 +56,7 @@ def append_sync_log(
     location_id: Any,
     user_id: Any | None = None,
     device_id: Any | None = None,
+    client_id: Any | None = None,
     client_timestamp: Any | None = None,
 ) -> Any:
     """Append one ``sync_log`` row on ``cursor`` and return its id (Req 14.5).
@@ -75,6 +76,8 @@ def append_sync_log(
         user_id: The acting identity (``sync_log.user_id``; nullable when the
             acting user is unknown for a backfill).
         device_id: Optional originating device (``sync_log.device_id``).
+        client_id: Optional stable offline-action identity
+            (``sync_log.client_id``). Non-null values are unique.
         client_timestamp: Optional client-side timestamp of the action.
 
     Returns:
@@ -88,10 +91,37 @@ def append_sync_log(
             f"invalid sync_log action {action!r}; expected one of "
             f"{sorted(ALLOWED_ACTIONS)}"
         )
-    cursor.execute(
-        "INSERT INTO sync_log "
-        "(entity, record_id, action, user_id, device_id, location_id, client_timestamp) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (entity, record_id, action, user_id, device_id, location_id, client_timestamp),
-    )
+    if client_id is None:
+        cursor.execute(
+            "INSERT INTO sync_log "
+            "(entity, record_id, action, user_id, device_id, location_id, "
+            "legacy_client_id_missing, client_timestamp) "
+            "VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s) RETURNING id",
+            (
+                entity,
+                record_id,
+                action,
+                user_id,
+                device_id,
+                location_id,
+                client_timestamp,
+            ),
+        )
+    else:
+        cursor.execute(
+            "INSERT INTO sync_log "
+            "(entity, record_id, action, user_id, device_id, client_id, location_id, "
+            "legacy_client_id_missing, client_timestamp) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE, %s) RETURNING id",
+            (
+                entity,
+                record_id,
+                action,
+                user_id,
+                device_id,
+                client_id,
+                location_id,
+                client_timestamp,
+            ),
+        )
     return cursor.fetchone()[0]
