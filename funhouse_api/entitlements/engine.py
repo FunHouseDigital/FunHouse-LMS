@@ -50,6 +50,7 @@ from zoneinfo import ZoneInfo
 from funhouse_api.config import DEFAULT_LOCATION_TIMEZONE
 from funhouse_pipeline.load.audit import (
     ACTION_INSERT,
+    ACTION_SKIP,
     ACTION_UPDATE,
     append_sync_log,
 )
@@ -61,6 +62,7 @@ STATUS_ACTIVE = "active"
 
 # Draw outcome statuses.
 DRAW_APPLIED = "applied"
+DRAW_SKIPPED = "skipped"
 DRAW_REJECTED = "rejected"
 
 # Rejection reasons (stable, machine-readable).
@@ -327,6 +329,10 @@ class DrawResult:
     def applied(self) -> bool:
         return self.status == DRAW_APPLIED
 
+    @property
+    def skipped(self) -> bool:
+        return self.status == DRAW_SKIPPED
+
 
 def _fetch_product_rules(cursor: Any, product_id: Any) -> dict[str, Any]:
     """Return a product's ``rules`` JSONB as a dict (empty when absent)."""
@@ -419,6 +425,7 @@ def create_entitlement(
             location_id=location_id,
             user_id=logged_by,
             device_id=device_id,
+            client_id=client_id,
             client_timestamp=now,
         )
 
@@ -444,22 +451,27 @@ def draw(
     now: datetime | None = None,
     location_timezone: str = DEFAULT_LOCATION_TIMEZONE,
     device_id: Any | None = None,
+    client_id: Any | None = None,
     audit_append: Callable[..., Any] | None = None,
 ) -> DrawResult:
     """Draw ``amount`` units from an entitlement, recording a signature (Req 8).
 
     Algorithm:
 
-    1. Lock the entitlement row ``FOR UPDATE`` (serializes concurrent draws).
-    2. If the product is recurring, apply :func:`reset_if_new_period` first and
+    1. Lock the entitlement row ``FOR UPDATE`` (serialises concurrent draws).
+    2. For an offline sync action, check the stable ``client_id`` while holding
+       that lock. A previously applied action is returned as ``skipped`` before
+       any reset or balance change.
+    3. If the product is recurring, apply :func:`reset_if_new_period` first and
        persist the reset (Req 9.3). The reset persists even when the draw is
        subsequently rejected -- the new period's allowance is real.
-    3. Reject (units unchanged) when the status is not ``active`` (Req 8.5) or
+    4. Reject (units unchanged) when the status is not ``active`` (Req 8.5) or
        ``remaining_units < amount`` (Req 8.4), returning a ``rejected`` result.
-    4. Otherwise decrement ``remaining_units`` by ``amount`` and append the
+    5. Otherwise decrement ``remaining_units`` by ``amount`` and append the
        **Digital_Signature** -- a ``sync_log`` ``update`` entry pairing the
-       acting user with a server timestamp (Req 8.3, 8.8) -- inside a savepoint.
-    5. If the signature append raises, roll the decrement back to the savepoint
+       acting user with a server timestamp and, when supplied, the stable client
+       identity (Req 8.3, 8.8) -- inside a savepoint.
+    6. If the signature append raises, roll the decrement back to the savepoint
        so the units are left unchanged, then report the failure (Req 8.9).
 
     Args:
@@ -470,6 +482,8 @@ def draw(
         now: Draw time (defaults to ``datetime.now(timezone.utc)``).
         location_timezone: Timezone for the recurring reset boundary.
         device_id: Optional device id for the audit entry.
+        client_id: Optional stable offline-action identity. When already present
+            on an applied audit row, the draw is an idempotent no-op.
         audit_append: Injectable audit function (defaults to
             :func:`append_sync_log`); the Property 17 test injects a failing
             callable to exercise the roll-back path.
@@ -509,6 +523,53 @@ def draw(
             )
 
         status, remaining_units, valid_from, product_id, location_id = row
+
+        # A stable sync client_id is the idempotency identity (Req 4.2). Check
+        # only after locking the entitlement so concurrent replays of the same
+        # draw cannot both pass the lookup and decrement. This happens before a
+        # recurring reset because a replay must be a complete no-op.
+        if client_id is not None:
+            cursor.execute(
+                "SELECT record_id FROM sync_log WHERE client_id = %s LIMIT 1",
+                (client_id,),
+            )
+            receipt_exists = cursor.fetchone() is not None
+            legacy_receipt = False
+            if not receipt_exists:
+                # Transition safety: an old API revision keyed draw replay on
+                # entitlement + timestamp and could not persist client_id. Only
+                # rows marked by migration 010 participate in this fallback;
+                # direct draws written afterwards keep the default FALSE.
+                cursor.execute(
+                    "SELECT 1 FROM sync_log "
+                    "WHERE legacy_client_id_missing = TRUE "
+                    "AND entity = 'entitlements' AND record_id = %s "
+                    "AND action = 'update' AND client_timestamp = %s LIMIT 1",
+                    (entitlement_id, now),
+                )
+                legacy_receipt = cursor.fetchone() is not None
+
+            if receipt_exists or legacy_receipt:
+                append_fn(
+                    cursor,
+                    entity="entitlements",
+                    record_id=entitlement_id,
+                    action=ACTION_SKIP,
+                    location_id=location_id,
+                    user_id=logged_by,
+                    device_id=device_id,
+                    # Claim the real identity when upgrading a legacy receipt;
+                    # ordinary replays leave it NULL to preserve uniqueness.
+                    client_id=client_id if legacy_receipt else None,
+                    client_timestamp=now,
+                )
+                conn.commit()
+                return DrawResult(
+                    status=DRAW_SKIPPED,
+                    entitlement_id=entitlement_id,
+                    remaining_units=remaining_units,
+                )
+
         rules = _fetch_product_rules(cursor, product_id)
 
         # (2) Apply recurring reset before evaluating the draw (Req 9.3).
@@ -537,8 +598,22 @@ def draw(
                 reason=REASON_INACTIVE,
             )
 
-        # Unlimited entitlement (no unit cap): nothing to decrement, no signature.
+        # Unlimited entitlement (no unit cap): there is no decrement or digital
+        # signature. A sync action still records a non-signature receipt so its
+        # next delivery is skipped by stable client identity.
         if remaining_units is None:
+            if client_id is not None:
+                append_fn(
+                    cursor,
+                    entity="entitlements",
+                    record_id=entitlement_id,
+                    action=ACTION_SKIP,
+                    location_id=location_id,
+                    user_id=logged_by,
+                    device_id=device_id,
+                    client_id=client_id,
+                    client_timestamp=now,
+                )
             conn.commit()
             return DrawResult(
                 status=DRAW_APPLIED,
@@ -574,6 +649,7 @@ def draw(
                     location_id=location_id,
                     user_id=logged_by,
                     device_id=device_id,
+                    client_id=client_id,
                     client_timestamp=now,
                 )
         except SignatureAppendError:

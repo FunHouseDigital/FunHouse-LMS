@@ -54,7 +54,7 @@ from funhouse_pipeline.extract.records import ExtractedRecord
 from funhouse_pipeline.load.audit import ACTION_INSERT, ACTION_SKIP, ACTION_UPDATE
 from funhouse_pipeline.load.audit import append_sync_log as _append_sync_log
 from funhouse_pipeline.load.consent import append_consent
-from funhouse_pipeline.load.dedup import compute_dedup_key, resolve_players
+from funhouse_pipeline.load.dedup import resolve_players
 from funhouse_pipeline.load.loader import amount_to_cents
 from funhouse_pipeline.load.popia import filter_payload
 
@@ -463,36 +463,23 @@ def _apply_entitlement(
         location_id, school_id = _resolve_entitlement_scope(conn, entitlement_id)
         scope.assert_can_write(location_id, school_id)  # AuthzError -> rejected
 
-        # Idempotency: a draw records a sync_log 'update' entry whose
-        # client_timestamp is the device-origin created_at; if one already exists
-        # for this entitlement + created_at the draw was applied -> no-op skip.
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT count(*) FROM sync_log WHERE entity = 'entitlements' "
-                "AND record_id = %s AND action = 'update' AND client_timestamp = %s",
-                (entitlement_id, created_at),
-            )
-            already = cursor.fetchone()[0]
-        if already:
-            with conn.cursor() as cursor:
-                append_sync_log(
-                    cursor, entity="entitlements", record_id=entitlement_id,
-                    action=ACTION_SKIP, location_id=location_id, user_id=logged_by,
-                    client_timestamp=created_at,
-                )
-            conn.commit()
-            return ActionResult(
-                action.client_id, action.entity, STATUS_SKIPPED,
-                record_id=entitlement_id,
-            )
-
         result = engine.draw(
-            conn, entitlement_id, int(payload["amount"]), logged_by=logged_by,
-            now=now, location_timezone=location_timezone,
+            conn,
+            entitlement_id,
+            int(payload["amount"]),
+            logged_by=logged_by,
+            now=now,
+            location_timezone=location_timezone,
+            client_id=action.client_id,
         )
         if result.applied:
             return ActionResult(
                 action.client_id, action.entity, STATUS_APPLIED,
+                record_id=entitlement_id,
+            )
+        if result.skipped:
+            return ActionResult(
+                action.client_id, action.entity, STATUS_SKIPPED,
                 record_id=entitlement_id,
             )
         return ActionResult(
