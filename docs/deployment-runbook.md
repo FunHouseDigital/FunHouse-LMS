@@ -332,7 +332,7 @@ Expected output — the created / already-present report, e.g.:
 
 ```
 Applying migrations to <host>:5432/funhouse (sslmode=require)
-Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql, 007_runtime_role_access.sql, 008_sessions_reference.sql, 009_holiday_special_price.sql
+Applied migrations: 001_schema.sql, 002_consents_append_only.sql, 003_role_facilitator.sql, 004_users_school_id.sql, 005_public_schema_lockdown.sql, 006_consents_function_search_path.sql, 007_runtime_role_access.sql, 008_sessions_reference.sql, 009_holiday_special_price.sql, 010_sync_log_client_id.sql
   Created: locations, schools, users, players, guardians, consents, products, entitlements, sessions, attendance, payments, lessons, student_metrics, sync_log
   Already present: (none)
 ```
@@ -347,6 +347,22 @@ it in production, every active Revenue PWA sales device must be online and use
 **Refresh data** (or sign out and back in), then wait for the updated reference-
 data timestamp before recording a Holiday Special sale. This replaces any
 cached R0 catalog entry with the approved price.
+
+Migration `010_sync_log_client_id.sql` adds a nullable, unique `client_id` to
+`sync_log` and marks pre-migration audit rows for safe transition matching.
+Existing audit history remains unchanged. New offline entitlement draws use the
+stable action identity as their atomic idempotency receipt, so replaying the same
+action cannot decrement a balance twice, while separate actions created at the
+same time remain distinct.
+
+**Apply and verify migration 010 before deploying the API revision that writes
+sync action receipts.** During that rolling deployment, old API instances omit
+the new columns and their draw receipts inherit the temporary legacy marker;
+the new revision writes `FALSE` explicitly for direct/null-identity audits. Keep
+the database default at `TRUE` until every old instance has drained. Offline
+entitlement create/draw actions require the new column. On a large `sync_log`,
+schedule and monitor the migration because the unique-index build temporarily
+blocks writes to that table.
 
 ### Migrations 005-007 security contract and Supabase rollout
 
