@@ -10,12 +10,18 @@ works offline and syncs back to the API.
 Everything can be deployed to AWS **af-south-1** (Cape Town) for data-residency
 under POPIA, on a lean footprint targeting **under US$80/month**.
 
-> **Current rollout:** the Container API is verified on Vercel against
-> Supabase. The Revenue PWA is prepared for a separate Vercel project deployed
-> from the `web/` directory; that account-level deployment is the next manual
-> step. The AWS App Runner/RDS/S3/CloudFront infrastructure is retained as the
-> future full-stack deployment path; see
-> [`docs/deployment-runbook.md`](docs/deployment-runbook.md) for both procedures.
+> **Current rollout:** the Container API and Revenue PWA are deployed as
+> separate Vercel projects from this repository. The API project uses the
+> repository root and connects to Supabase; the PWA project builds from `web/`.
+> Migration 010 and the dedicated Supabase runtime-role verification completed
+> before the client-identity API revision was merged. Release acceptance is
+> still pending: rerun **Verify Live API Role Access** from `main`, record
+> the workflow run's `head_sha`, and require it to match the API's Vercel
+> Production deployment SHA. Then complete all six browser smoke checks and
+> Phase 1 field acceptance before using the PWA with real learner data. The AWS
+> App Runner/RDS/S3/CloudFront infrastructure remains an optional future
+> full-stack path; see [`docs/deployment-runbook.md`](docs/deployment-runbook.md)
+> for both procedures.
 
 ## Architecture overview
 
@@ -33,7 +39,7 @@ Three shipped components:
   **IndexedDB**, runs a **service worker** for offline use, and **syncs** to the
   Container API when back online.
 
-Current rollout topology (after completing the separate PWA project step):
+Current deployed topology:
 
 ```mermaid
 flowchart LR
@@ -88,12 +94,13 @@ prints a summary (collected / extracted / flagged / loaded / skipped / archived)
 Re-running over the same folder is idempotent (duplicates are skipped and
 recorded). Single stages can be run with `--stage`, and a prior run resumed with
 `--resume <run_id>`. Full documentation of the command, its flags, offline
-behavior, and provider/config environment variables is in
+behaviour, and provider/config environment variables is in
 [`docs/pipeline-command.md`](docs/pipeline-command.md).
 
-## Deploy in ~10 steps
+## Future AWS deployment in ~10 steps
 
-A high-level summary of the first production deploy to **af-south-1** (target
+A high-level summary of an optional first production deployment to
+**af-south-1** (target
 **< US$80/mo**). This is the map, not the territory — the **full, ordered
 procedure lives in [`docs/deployment-runbook.md`](docs/deployment-runbook.md)**,
 validation steps in
@@ -156,9 +163,11 @@ FUNHOUSE_TEST_DSN="host=localhost port=5432 dbname=funhouse_test user=postgres" 
     uv run pytest -m db
 ```
 
-Each DB-backed test runs inside a disposable schema (created up front, dropped
-`CASCADE` afterwards) inside a rolled-back transaction, so tests never interfere
-with each other or leave residue.
+Each DB-backed test runs inside a unique disposable schema created up front and
+dropped `CASCADE` afterwards. The primary fixture transaction is rolled back;
+tests that commit internally or open additional PostgreSQL sessions remain
+isolated by that schema, so tests neither interfere with one another nor leave
+residue.
 
 ### Web (Revenue PWA)
 
@@ -195,10 +204,11 @@ with connect(cfg) as conn:
     print(result.summary())
 ```
 
-## Data residency & POPIA posture
+## Future AWS data-residency and POPIA posture
 
-All **Data_At_Rest** (RDS, S3, SSM parameters) is provisioned in **af-south-1**
-and the deployment builds no cross-region path. The Container API depends only
+In the optional AWS topology, all **Data_At_Rest** (RDS, S3, SSM parameters) is
+provisioned in **af-south-1** and the deployment builds no cross-region path.
+The Container API depends only
 on a standard libpq DSN via environment variables and runs auth in-process, so
 migrating to another host or region is an env change plus a re-run of
 `run_migrations` — documented in `infra/README.md`'s migration-equivalence

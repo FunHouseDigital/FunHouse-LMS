@@ -6,15 +6,26 @@
 > Docker, or Node.js required.
 
 
-## Deploy the current Vercel + Supabase production path
+## Operate the current Vercel + Supabase production path
 
-The lowest-risk current deployment keeps the verified FastAPI project at
-`https://fun-house-lms.vercel.app` unchanged and creates a **second Vercel
-project** for the PWA. The same GitHub repository supplies both projects, but
-the PWA project uses `web` as its root directory. AWS remains the future
+The Container API and Revenue PWA are deployed as separate Vercel projects from
+this repository. The API project uses the repository root at
+`https://fun-house-lms.vercel.app` and connects to Supabase. The PWA project
+uses `web` as its root directory. Migration 010 and the dedicated Supabase
+runtime-role verification completed before the client-identity API revision was
+merged.
+
+Deployment success is not release acceptance. **Verify Live API Role Access**
+must still be rerun against the exact current release, all six browser smoke
+checks must pass, and Phase 1 field acceptance must be recorded before real
+learner data is used. Record the operator-approved stable PWA origin rather than
+inferring it from a transient deployment URL. AWS remains the optional future
 full-stack path documented below.
 
-### A. Create the PWA project **[FOUNDER-RUN / VERCEL ACCOUNT]**
+### A. Recreate or replace the PWA project **[FOUNDER-RUN / VERCEL ACCOUNT]**
+
+The production PWA project already exists. Use this section only when creating a
+replacement project or a new environment:
 
 1. Open the [Vercel dashboard](https://vercel.com/dashboard), choose **Add New →
    Project**, and import `FunHouseDigital/FunHouse-LMS` again. Do not modify or
@@ -65,8 +76,10 @@ full-stack path documented below.
 
    Expected: health returns `200`; preflight returns `200` with
    `access-control-allow-origin: <PWA_ORIGIN>`.
-4. Run **Verify Live API Role Access** from GitHub Actions on `main` after the
-   API redeploy. It must pass before browser acceptance.
+4. Run **Verify Live API Role Access** from `main` after the API redeploy.
+   Record the workflow run's `head_sha` and the API's Vercel Production
+   deployment SHA; they must match. The workflow must pass before browser
+   acceptance.
 
 ### C. Verify static/PWA delivery
 
@@ -122,19 +135,20 @@ To establish or change Loyiso's password without changing Aya:
    operator.
 
 The normal **Initialize Live Supabase Database** workflow remains
-initialization-only and refuses implicit rotation. Selecting `Loyiso` there
+initialisation-only and refuses implicit rotation. Selecting `Loyiso` there
 uses `LOYISO_BOOTSTRAP_PASSWORD`; it never falls back to Aya's secret. Password
 rotation does not revoke already-issued JWTs, which remain valid until expiry.
 
 ### Vercel rollback and custom-domain rules
 
-- A failed update to an established PWA can be rolled back by promoting its
+- A failed update to the established PWA can be rolled back by promoting its
   previous working deployment in Vercel.
-- On the **first PWA release**, there is no previous PWA deployment. Keep the
-  generated hostname unpublished until acceptance passes. If it fails, remove
-  any custom alias or disable/delete the new PWA project, remove its exact
-  origin from `FUNHOUSE_CORS_ORIGINS`, and redeploy the API only when that CORS
-  cleanup is required. Leave the existing API deployment otherwise untouched.
+- When creating a replacement project or new environment, there may be no
+  previous PWA deployment. Keep its generated hostname unpublished until
+  acceptance passes. If it fails, remove any custom alias or disable/delete the
+  replacement project, remove its exact origin from `FUNHOUSE_CORS_ORIGINS`, and
+  redeploy the API only when that CORS cleanup is required. Leave the established
+  API and PWA deployments otherwise untouched.
 - If the API redeploy fails, restore its previous deployment immediately. If
   only CORS fails, correct `FUNHOUSE_CORS_ORIGINS` and redeploy; do not alter DB
   credentials.
@@ -355,14 +369,17 @@ stable action identity as their atomic idempotency receipt, so replaying the sam
 action cannot decrement a balance twice, while separate actions created at the
 same time remain distinct.
 
-**Apply and verify migration 010 before deploying the API revision that writes
-sync action receipts.** During that rolling deployment, old API instances omit
-the new columns and their draw receipts inherit the temporary legacy marker;
-the new revision writes `FALSE` explicitly for direct/null-identity audits. Keep
-the database default at `TRUE` until every old instance has drained. Offline
-entitlement create/draw actions require the new column. On a large `sync_log`,
-schedule and monitor the migration because the unique-index build temporarily
-blocks writes to that table.
+Migration 010 was applied to live Supabase and verified before the API revision
+that writes stable sync action receipts was merged. Preserve that schema-first
+order when creating a new environment or recovering an older database: apply
+and verify migration 010 before deploying the dependent API revision. During a
+rolling deployment, old API instances omit the new columns and their draw
+receipts inherit the temporary legacy marker; the new revision writes `FALSE`
+explicitly for direct/null-identity audits. Keep the database default at `TRUE`
+until rollback to every old API binary is formally retired. Offline entitlement
+create/draw actions require the new column. On a large `sync_log`, schedule and
+monitor the migration because the unique-index build temporarily blocks writes
+to that table.
 
 ### Migrations 005-007 security contract and Supabase rollout
 
@@ -413,7 +430,14 @@ creation through the database's `PUBLIC TEMP` default; this is not an
 application grant and removing it would be a database-wide policy decision.
 Role creation and passwords are intentionally not committed to migrations.
 
-For the live Supabase project after this change reaches `main`:
+For the current live Supabase project, the automated migration-010
+initialisation and dedicated runtime-role verification completed before the
+client-identity API revision merged. Those workflow results do not prove the
+current API release's authenticated role behaviour, the manual SQL catalogue
+checks, Security Advisor clearance, browser acceptance, or field acceptance.
+Those remain explicit release gates.
+
+For a new Supabase project, a replacement runtime role, or policy recovery:
 
 1. In Supabase, confirm the custom session-pooler username format for
    `funhouse_runtime` in **Connect**. Provision the PostgreSQL role and a distinct

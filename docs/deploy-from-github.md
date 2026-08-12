@@ -1,4 +1,10 @@
-# Zero-local-tooling deploy (from GitHub)
+# Zero-local-tooling AWS deploy (from GitHub)
+
+> **Optional future AWS path:** current production uses separate Vercel API/PWA
+> projects with Supabase. This procedure provisions the alternative full AWS
+> stack; the repository does not record a completed production run of this
+> workflow. Do not treat the resources or `af-south-1` guarantees below as facts
+> about the current Vercel/Supabase rollout.
 
 Deploy the entire FunHouse stack to AWS **af-south-1** from your browser — no
 AWS CLI, Terraform, Docker, or Node.js on your machine. Everything runs on a

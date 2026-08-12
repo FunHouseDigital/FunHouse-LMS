@@ -34,22 +34,16 @@ green and deployable.
 - PRs must be **green in CI** before merge.
 - Never force-push `main`.
 
-## Recommended merge order for the currently open PRs
+## Release-sensitive changes
 
-The open PRs are largely independent, so any order works — but this order is the
-cleanest, and the deployment PR must come **after** the application PRs:
-
-1. **PR #3 — API `student_metrics` sync entity.** Backend that enables the PWA's
-   live metrics.
-2. **PR #2 — Revenue PWA + live metrics.** The client that consumes the above.
-3. **PR #5 — facilitator `school_id` at login.** Additive API/auth change plus a
-   migration.
-4. **PR #4 — Deployment IaC + README + CI.** Merge after the app is in place; it
-   carries the repo-wide README and CI.
-
-> After all of these merge, `main` contains every component and CI runs all three
-> jobs. Then perform the live deploy per
-> [`docs/deployment-runbook.md`](docs/deployment-runbook.md).
+Keep pull requests independently deployable and order coupled schema/API work
+explicitly. Additive database migrations must merge and be applied before any
+API revision that depends on the new schema. The API and PWA deploy through
+separate Vercel projects, so confirm both production deployments when a change
+crosses that boundary. Rerun the applicable live verification workflow from
+`main`, record its `head_sha`, and require it to match the corresponding Vercel
+Production deployment SHA before manual smoke checks. A green CI run or
+`/health` response alone is not production acceptance.
 
 ## How CI works (`.github/workflows/ci.yml`)
 
@@ -104,15 +98,22 @@ tested.
 ## Spec-driven workflow
 
 Features are specced under `.kiro/specs/<feature>/` (requirements → design →
-tasks) before implementation. When you change behavior, keep the spec docs
+tasks) before implementation. When you change behaviour, keep the spec docs
 updated additively.
 
-## Deployment & gating note
+## Deployment and gating note
 
-The live AWS deploy is a founder-run step (see
-[`docs/deployment-runbook.md`](docs/deployment-runbook.md)) and needs real
-credentials. For a **zero-local-tooling, browser-only deploy** via GitHub
-Actions, see [`docs/deploy-from-github.md`](docs/deploy-from-github.md)
-(Actions → Deploy → Run workflow). **Phase 2 (Lesson Engine, Bedrock) is gated behind Phase 1 field
-acceptance** — do not begin Phase 2 work until the system is deployed and used in
-the real lounge. All data at rest stays in `af-south-1` (POPIA).
+Current production uses separate Vercel projects for the API and PWA, backed by
+Supabase. Follow [`docs/deployment-runbook.md`](docs/deployment-runbook.md),
+correlate the live verification run's `head_sha` with the Vercel Production
+deployment SHA, and then complete the browser smoke checklist. The repository
+does not establish the selected Vercel/Supabase
+storage regions or provider terms, so do not claim `af-south-1` residency for
+that path without separate evidence.
+
+The browser-only GitHub **Deploy** workflow documented in
+[`docs/deploy-from-github.md`](docs/deploy-from-github.md) is the optional future
+AWS full-stack path and needs live AWS credentials. **Phase 2 (Lesson Engine,
+Bedrock) remains gated behind Phase 1 browser and field acceptance** — do not
+begin Phase 2 work until the current release passes all six smoke checks and is
+used successfully in the real lounge.

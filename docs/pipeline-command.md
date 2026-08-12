@@ -102,7 +102,7 @@ correctness holds even if a file is reprocessed.
 - **Bedrock Batch and S3 calls** are retried with **exponential backoff**; every
   retry and every persistent failure is recorded in the manifest.
 
-## Offline behavior (Req 15.3)
+## Offline behaviour (Req 15.3)
 
 Collect and Validate require **no internet**. Network access is needed only for:
 
@@ -156,22 +156,26 @@ funhouse-pipeline run --source-folder ./intake --config config.yaml --no-migrate
 ```
 
 
-## Data protection & residency (POPIA)
+## Data protection and deployment scope (POPIA)
 
 The subjects of much of this data are minors, so data protection is a first-class
-part of the deployment (Req 14):
+part of the deployment (Req 14). Controls differ between the current production
+path and the optional future AWS path:
 
-- **Encryption at rest (Req 14.2).** The PostgreSQL database is deployed on AWS
-  RDS with **storage encryption enabled** at the instance level, so all data —
-  including automated backups, read replicas, and snapshots — is encrypted at
-  rest. A local development PostgreSQL cannot emulate RDS storage encryption;
-  this control is provisioned as part of the RDS instance configuration.
-- **Encryption in transit (Req 14.3).** All database connections use TLS
-  (`sslmode=require` against RDS; the default `prefer` locally), and all S3 and
-  Bedrock traffic uses HTTPS/TLS — boto3's default transport.
-- **Region residency (Req 14.4, 1.5, 12.2).** Both the database and the S3
-  archive bucket live in region **`af-south-1`**, which is the default region in
-  configuration.
+- **Current Vercel/Supabase path.** Production database workflows use pinned-CA
+  `verify-full` connections, while the API and PWA are served over HTTPS. The
+  repository does not establish the selected Vercel/Supabase storage regions or
+  provider terms; confirm them separately before making a residency claim.
+- **Future AWS encryption at rest (Req 14.2).** The Terraform path provisions
+  PostgreSQL on RDS with storage encryption enabled at the instance level, so
+  database storage, automated backups, read replicas and snapshots are
+  encrypted. Local PostgreSQL cannot emulate this control.
+- **Encryption in transit (Req 14.3).** Database connections require TLS in
+  production (`sslmode=require` for RDS and pinned-CA `verify-full` for live
+  Supabase workflows); S3 and Bedrock traffic uses HTTPS/TLS through boto3.
+- **Future AWS region residency (Req 14.4, 1.5, 12.2).** The Terraform RDS and
+  S3 archive are configured for **`af-south-1`**. This guarantee does not apply
+  automatically to the current Vercel/Supabase production path.
 - **No prohibited fields (Req 14.1).** National identity numbers and physical
   addresses are never loaded — the Loader drops them defensively even if an
   extractor produced them.
