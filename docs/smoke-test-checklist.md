@@ -18,7 +18,9 @@ For the current Vercel + Supabase rollout:
 - The PWA project was built from repository root directory `web` with
   `VITE_API_BASE_URL=https://fun-house-lms.vercel.app`.
 - The API project's `FUNHOUSE_CORS_ORIGINS` contains the exact `PWA_ORIGIN`.
-- **Verify Live API Role Access** passes on `main`.
+- Run **Verify Live API Role Access** from `main` after the latest API
+  deployment. Record the workflow run's `head_sha` and require it to match the
+  API's Vercel Production deployment SHA.
 - You have the seeded manager (`Loyiso`) password from the dedicated
   `LOYISO_BOOTSTRAP_PASSWORD` password-manager entry. Never write the password
   in this checklist, browser screenshots, workflow inputs, or chat.
@@ -51,6 +53,7 @@ substituting its PWA and API origins.
 **Deployment is accepted only when all six steps pass.** If a step fails, stop
 before using the PWA with real learner data and record the failed step and HTTP
 status. Preserve the working API and any established PWA deployment, then roll
-back only the component changed. On the first PWA release, keep its generated
-hostname unpublished; remove any alias or disable the new project if needed,
-and remove its exact API CORS origin if abandoning the release.
+back only the component changed. When validating a replacement PWA project or
+new environment, keep its generated hostname unpublished; remove any alias or
+disable the replacement project if needed, and remove its exact API CORS origin
+if abandoning that release.
