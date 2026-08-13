@@ -15,6 +15,7 @@ on:
           - verify-live-pwa-browser
 
 permissions:
+  actions: read
   contents: read
   deployments: read
 
@@ -84,13 +85,31 @@ jobs:
             echo "::error::Approved Vercel Production deployments were not attached to GITHUB_SHA."
             exit 1
           fi
-          API_DEPLOYMENT_STATE="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${API_DEPLOYMENT_ID}/statuses?per_page=1" --jq '.[0].state // "missing"')"
-          PWA_DEPLOYMENT_STATE="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${PWA_DEPLOYMENT_ID}/statuses?per_page=1" --jq '.[0].state // "missing"')"
+          API_DEPLOYMENT_STATUS="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${API_DEPLOYMENT_ID}/statuses?per_page=1")"
+          PWA_DEPLOYMENT_STATUS="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${PWA_DEPLOYMENT_ID}/statuses?per_page=1")"
+          API_DEPLOYMENT_STATE="$(jq -r '.[0].state // "missing"' <<<"$API_DEPLOYMENT_STATUS")"
+          PWA_DEPLOYMENT_STATE="$(jq -r '.[0].state // "missing"' <<<"$PWA_DEPLOYMENT_STATUS")"
           if [ "$API_DEPLOYMENT_STATE" != "success" ] || [ "$PWA_DEPLOYMENT_STATE" != "success" ]; then
             echo "::error::Both approved Vercel Production deployments must be successful."
             exit 1
           fi
-          echo "Current main commit has successful API and PWA Production deployments."
+
+          API_DEPLOYED_AT="$(jq -r '.[0].created_at // empty' <<<"$API_DEPLOYMENT_STATUS")"
+          ROLE_RUNS="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/verify-live-api-rbac.yml/runs?event=workflow_dispatch&branch=main&head_sha=${GITHUB_SHA}&per_page=100")"
+          ROLE_RUN_ID="$(jq -r \
+            --arg sha "$GITHUB_SHA" \
+            --arg deployed_at "$API_DEPLOYED_AT" \
+            '[.workflow_runs[] | select(
+              .head_sha == $sha and
+              .status == "completed" and
+              .conclusion == "success" and
+              .created_at >= $deployed_at
+            )][0].id // empty' <<<"$ROLE_RUNS")"
+          if [ -z "$API_DEPLOYED_AT" ] || [ -z "$ROLE_RUN_ID" ]; then
+            echo "::error::Run Verify Live API Role Access successfully for this Production SHA before browser verification."
+            exit 1
+          fi
+          echo "Current main commit has successful API/PWA deployments and role verification."
 
       - name: Checkout main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -140,6 +159,7 @@ jobs:
             echo "## Live PWA automated browser smoke passed"
             echo ""
             echo "- Workflow SHA matched successful API and PWA Vercel Production deployments"
+            echo "- Same-SHA API role verification passed after the API Production deployment"
             echo "- HTTPS deep link, manifest metadata, and activated service worker passed"
             echo "- Manager login and exact synthetic-player lookup passed"
             echo "- Offline PS5 / 20-minute / R0 cash capture persisted two safe local actions"
