@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: live-api-role-verification
+  group: live-production-canary-verification
   cancel-in-progress: false
 
 jobs:

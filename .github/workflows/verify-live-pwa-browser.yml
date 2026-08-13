@@ -1,0 +1,151 @@
+name: Verify Live PWA Browser
+
+# Manual production browser probe for the approved PWA/API origins. It uses only
+# the retained synthetic player and stable action identities, so reruns reuse
+# the same server rows rather than adding repeated production history.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Confirm synthetic offline capture and sync"
+        type: choice
+        required: true
+        options:
+          - verify-live-pwa-browser
+
+permissions:
+  contents: read
+  deployments: read
+
+# Serialise every workflow that writes retained production canary data.
+concurrency:
+  group: live-production-canary-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify HTTPS, offline capture, sync, read-back, and CORS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      PWA_ORIGIN: https://funhouse-revenue-pwa.vercel.app
+      API_ORIGIN: https://fun-house-lms.vercel.app
+
+    steps:
+      - name: Require main branch and explicit confirmation
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run this production workflow from the main branch."
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != "verify-live-pwa-browser" ]; then
+            echo "::error::Live PWA browser verification confirmation did not match."
+            exit 1
+          fi
+
+      - name: Require Vercel Production deployments for the current main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CURRENT_MAIN_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$GITHUB_SHA" != "$CURRENT_MAIN_SHA" ]; then
+            echo "::error::The workflow SHA is no longer the current main commit. Dispatch a fresh run."
+            exit 1
+          fi
+
+          COMMIT_STATUS="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/status")"
+          API_STATE="$(jq -r '[.statuses[] | select(.context == "Vercel – fun-house-lms")][0].state // "missing"' <<<"$COMMIT_STATUS")"
+          PWA_STATE="$(jq -r '[.statuses[] | select(.context == "Vercel – funhouse-revenue-pwa")][0].state // "missing"' <<<"$COMMIT_STATUS")"
+          API_TARGET="$(jq -r '[.statuses[] | select(.context == "Vercel – fun-house-lms")][0].target_url // "missing"' <<<"$COMMIT_STATUS")"
+          PWA_TARGET="$(jq -r '[.statuses[] | select(.context == "Vercel – funhouse-revenue-pwa")][0].target_url // "missing"' <<<"$COMMIT_STATUS")"
+          if [ "$API_STATE" != "success" ] || [ "$PWA_STATE" != "success" ]; then
+            echo "::error::Both Vercel Production commit statuses must succeed for GITHUB_SHA."
+            exit 1
+          fi
+          case "$API_TARGET" in
+            https://vercel.com/fun-house-digital/fun-house-lms/*) ;;
+            *) echo "::error::API status did not target the approved Vercel project."; exit 1 ;;
+          esac
+          case "$PWA_TARGET" in
+            https://vercel.com/fun-house-digital/funhouse-revenue-pwa/*) ;;
+            *) echo "::error::PWA status did not target the approved Vercel project."; exit 1 ;;
+          esac
+
+          DEPLOYMENTS="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${GITHUB_SHA}&per_page=100")"
+          API_DEPLOYMENT_ID="$(jq -r '[.[] | select(.environment == "Production – fun-house-lms" and .creator.login == "vercel[bot]")][0].id // empty' <<<"$DEPLOYMENTS")"
+          PWA_DEPLOYMENT_ID="$(jq -r '[.[] | select(.environment == "Production – funhouse-revenue-pwa" and .creator.login == "vercel[bot]")][0].id // empty' <<<"$DEPLOYMENTS")"
+          if [ -z "$API_DEPLOYMENT_ID" ] || [ -z "$PWA_DEPLOYMENT_ID" ]; then
+            echo "::error::Approved Vercel Production deployments were not attached to GITHUB_SHA."
+            exit 1
+          fi
+          API_DEPLOYMENT_STATE="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${API_DEPLOYMENT_ID}/statuses?per_page=1" --jq '.[0].state // "missing"')"
+          PWA_DEPLOYMENT_STATE="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${PWA_DEPLOYMENT_ID}/statuses?per_page=1" --jq '.[0].state // "missing"')"
+          if [ "$API_DEPLOYMENT_STATE" != "success" ] || [ "$PWA_DEPLOYMENT_STATE" != "success" ]; then
+            echo "::error::Both approved Vercel Production deployments must be successful."
+            exit 1
+          fi
+          echo "Current main commit has successful API and PWA Production deployments."
+
+      - name: Checkout main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install locked browser-test dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install pinned Chromium runtime
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Recheck current main immediately before the live probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CURRENT_MAIN_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$GITHUB_SHA" != "$CURRENT_MAIN_SHA" ]; then
+            echo "::error::Main advanced while the browser runtime was prepared. Dispatch a fresh run."
+            exit 1
+          fi
+          COMMIT_STATUS="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/status")"
+          API_STATE="$(jq -r '[.statuses[] | select(.context == "Vercel – fun-house-lms")][0].state // "missing"' <<<"$COMMIT_STATUS")"
+          PWA_STATE="$(jq -r '[.statuses[] | select(.context == "Vercel – funhouse-revenue-pwa")][0].state // "missing"' <<<"$COMMIT_STATUS")"
+          if [ "$API_STATE" != "success" ] || [ "$PWA_STATE" != "success" ]; then
+            echo "::error::A Vercel Production status changed before the live probe."
+            exit 1
+          fi
+
+      - name: Run protected production browser smoke
+        working-directory: web
+        env:
+          LOYISO_BOOTSTRAP_PASSWORD: ${{ secrets.LOYISO_BOOTSTRAP_PASSWORD }}
+        run: npm run test:production-smoke
+
+      - name: Publish non-secret summary
+        run: |
+          {
+            echo "## Live PWA automated browser smoke passed"
+            echo ""
+            echo "- Workflow SHA matched successful API and PWA Vercel Production deployments"
+            echo "- HTTPS deep link, manifest metadata, and activated service worker passed"
+            echo "- Manager login and exact synthetic-player lookup passed"
+            echo "- Offline PS5 / 20-minute / R0 cash capture persisted two safe local actions"
+            echo "- Reconnect sync applied or idempotently skipped both stable canary actions"
+            echo "- Exact synthetic session and payment were read back and rendered"
+            echo "- Exact-origin credentialed CORS and HTTPS-only traffic passed"
+            echo "- No screenshots, traces, videos, HARs, credentials, JWTs, roster rows, or record identifiers were published"
+            echo "- Browser install-prompt presentation remains a manual platform check"
+          } >> "$GITHUB_STEP_SUMMARY"
