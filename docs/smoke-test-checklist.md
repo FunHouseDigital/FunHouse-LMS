@@ -35,7 +35,8 @@ substituting its PWA and API origins.
 The manually dispatched **Verify Live PWA Browser** workflow runs the automated
 parts of all six checks from `main`. It requires the workflow SHA to remain the
 current `main` commit, verifies successful Vercel-bot Production deployments and
-approved project status targets attached to that SHA, reads
+approved project status targets attached to that SHA, and requires a successful
+same-SHA **Verify Live API Role Access** run after the API deployment. It reads
 `LOYISO_BOOTSTRAP_PASSWORD` only from the protected `production` environment,
 and writes only to `API Verification Canary v1`. Stable action identities make reruns idempotent. It publishes no browser
 artifacts, credentials, JWTs, roster data, or record identifiers.

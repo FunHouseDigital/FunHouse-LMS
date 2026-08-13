@@ -262,7 +262,10 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   await expect(playerSearch).toBeVisible();
   await playerSearch.fill(CANARY_NAME);
   const roster = page.getByRole('list', { name: 'Player roster' });
-  const canaryLinks = roster.getByRole('link', { name: CANARY_NAME, exact: true });
+  const canaryNames = roster.getByText(CANARY_NAME, { exact: true });
+  await expect(canaryNames).toHaveCount(1);
+  const canaryRow = canaryNames.locator('xpath=ancestor::li[1]');
+  const canaryLinks = canaryRow.getByRole('link');
   await expect(canaryLinks).toHaveCount(1);
   const canaryHref = await canaryLinks.getAttribute('href');
   requireCondition(
@@ -447,9 +450,10 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   // Step 5: server-backed read-back of the exact deterministic synthetic rows.
   await page.getByRole('link', { name: 'Players' }).click();
   await page.getByLabel('Search players by name').fill(CANARY_NAME);
-  const readBackLink = page
-    .getByRole('list', { name: 'Player roster' })
-    .getByRole('link', { name: CANARY_NAME, exact: true });
+  const readBackRoster = page.getByRole('list', { name: 'Player roster' });
+  const readBackName = readBackRoster.getByText(CANARY_NAME, { exact: true });
+  await expect(readBackName).toHaveCount(1);
+  const readBackLink = readBackName.locator('xpath=ancestor::li[1]').getByRole('link');
   await expect(readBackLink).toHaveCount(1);
   const historyResponsePromise = page.waitForResponse((response) =>
     isApiResponse(response, /^\/players\/[^/]+\/history$/, 'GET'),
