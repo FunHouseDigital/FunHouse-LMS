@@ -301,7 +301,7 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   await context.setOffline(true);
   const syncRequestsBeforeCapture = syncRequestCount;
   await page.getByRole('radio', { name: 'PS5' }).check();
-  await page.getByRole('button', { name: '20 min' }).click();
+  await page.getByRole('button', { name: '20 min', exact: true }).click();
   await page.getByRole('radio', { name: 'Cash' }).check();
   await page.getByLabel('Cash amount').fill('0');
   await page.getByRole('button', { name: 'Confirm session' }).click();
