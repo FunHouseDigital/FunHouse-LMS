@@ -198,7 +198,29 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   const worker = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
     const active = registration.active;
-    return { scope: registration.scope, state: active?.state ?? null };
+    if (!active) throw new Error('Service worker registration had no active worker');
+    if (active.state !== 'activated') {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+          active.removeEventListener('statechange', onStateChange);
+          reject(new Error('Service worker activation timed out'));
+        }, 10_000);
+        const onStateChange = (): void => {
+          if (active.state === 'activated') {
+            window.clearTimeout(timeout);
+            active.removeEventListener('statechange', onStateChange);
+            resolve();
+          } else if (active.state === 'redundant') {
+            window.clearTimeout(timeout);
+            active.removeEventListener('statechange', onStateChange);
+            reject(new Error('Service worker became redundant before activation'));
+          }
+        };
+        active.addEventListener('statechange', onStateChange);
+        onStateChange();
+      });
+    }
+    return { scope: registration.scope, state: active.state };
   });
   expect(worker.scope, 'Service worker scope changed').toBe(`${PWA_ORIGIN}/`);
   expect(worker.state, 'Service worker was not activated').toBe('activated');
