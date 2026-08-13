@@ -1,0 +1,8 @@
+{
+  "ignoreCommand": "exit 1",
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  }
+}

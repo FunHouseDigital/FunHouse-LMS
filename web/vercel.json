@@ -1,4 +1,10 @@
 {
+  "ignoreCommand": "exit 1",
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  },
   "headers": [
     {
       "source": "/index.html",
