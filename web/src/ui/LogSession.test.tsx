@@ -25,7 +25,7 @@ function makeJwt(claims: Record<string, unknown>): string {
 function managerResponse(): LoginResponse {
   const exp = Date.now() + 60 * 60 * 1000;
   return {
-    access_token: makeJwt({ sub: 'u1', role: 'manager', location_id: 'loc-1', exp: Math.floor(exp / 1000) }),
+    access_token: makeJwt({ sub: 'u1', role: 'manager', location_id: 'loc-1', iat: 1, exp: Math.floor(exp / 1000) }),
     token_type: 'bearer',
     expires_at: new Date(exp).toISOString(),
   };

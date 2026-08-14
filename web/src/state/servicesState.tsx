@@ -116,12 +116,8 @@ export function ServicesProvider({ children, scheduler: injected }: ServicesProv
     } else {
       const engine = new SyncEngine({
         client,
-        onUnauthorized: () => {
-          const active = activeFlushRef.current;
-          if (active?.sessionGeneration === sessionGenerationRef.current) {
-            logoutRef.current();
-          }
-        },
+        // ContainerApiClient performs centralized token/generation-aware 401
+        // revocation; SyncEngine keeps its callback only for isolated tests.
         getScope: () => scopeRef.current,
       });
       const full = new SyncScheduler({

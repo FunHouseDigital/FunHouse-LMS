@@ -59,6 +59,7 @@ function managerResponse(): LoginResponse {
       sub: 'manager-1',
       role: 'manager',
       location_id: 'loc-1',
+      iat: 1,
       exp: Math.floor(expiresAt / 1000),
     }),
     token_type: 'bearer',
