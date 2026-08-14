@@ -172,7 +172,8 @@ ul {
 
 .app-workspace {
   min-width: 0;
-  padding: 1.25rem clamp(1rem, 3vw, 2.5rem) 3rem;
+  padding: 1.25rem clamp(1rem, 3vw, 2.5rem)
+    max(4.5rem, calc(3rem + env(safe-area-inset-bottom)));
 }
 
 .app-workspace > main {
@@ -186,10 +187,33 @@ ul {
   min-height: 100dvh;
   place-items: center;
   padding: clamp(1rem, 5vw, 3rem);
+  padding-bottom: max(4.5rem, calc(3rem + env(safe-area-inset-bottom)));
 }
 
 .app-shell.is-guest .app-workspace > main {
   width: min(100%, 460px);
+}
+
+.release-identifier {
+  position: fixed;
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  z-index: 20;
+  padding: 0.35rem 0.55rem;
+  color: var(--muted);
+  background: rgba(10, 15, 29, 0.92);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
+.release-identifier code {
+  color: var(--text);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .app-sidebar {

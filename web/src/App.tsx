@@ -20,6 +20,10 @@ import { ReferenceDataStatus } from './ui/ReferenceDataStatus';
 import { AppRoutes } from './ui/AppRoutes';
 import { useAuth } from './state/authState';
 
+/** Identifies the exact app shell executing on this device. */
+const RELEASE_ID =
+  typeof __APP_RELEASE_ID__ === 'string' ? __APP_RELEASE_ID__ : 'local';
+
 export function AppShell() {
   const { isAuthenticated } = useAuth();
 
@@ -42,6 +46,9 @@ export function AppShell() {
                 <AppRoutes />
               </main>
             </div>
+            <footer className="release-identifier" aria-label="Application release">
+              Release <code>{RELEASE_ID}</code>
+            </footer>
           </div>
         </ReferenceDataProvider>
       </ServicesProvider>

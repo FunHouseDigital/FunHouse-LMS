@@ -13,6 +13,14 @@ on:
         required: true
         options:
           - verify-live-pwa-browser
+      expected_sync_result:
+        description: "Require stable canary replay on a subsequent same-SHA run"
+        type: choice
+        required: true
+        default: applied-or-skipped
+        options:
+          - applied-or-skipped
+          - skipped
 
 permissions:
   actions: read
@@ -151,19 +159,23 @@ jobs:
         working-directory: web
         env:
           LOYISO_BOOTSTRAP_PASSWORD: ${{ secrets.LOYISO_BOOTSTRAP_PASSWORD }}
+          EXPECTED_SYNC_RESULT: ${{ inputs.expected_sync_result }}
         run: npm run test:production-smoke
 
       - name: Publish non-secret summary
+        env:
+          EXPECTED_SYNC_RESULT: ${{ inputs.expected_sync_result }}
         run: |
           {
             echo "## Live PWA automated browser smoke passed"
             echo ""
             echo "- Workflow SHA matched successful API and PWA Vercel Production deployments"
+            echo "- Visible Release ${GITHUB_SHA:0:7} matched the workflow SHA before and after login"
             echo "- Same-SHA API role verification passed after the API Production deployment"
             echo "- HTTPS deep link, manifest metadata, and activated service worker passed"
             echo "- Manager login and exact synthetic-player lookup passed"
             echo "- Offline PS5 / 20-minute / R0 cash capture persisted two safe local actions"
-            echo "- Reconnect sync applied or idempotently skipped both stable canary actions"
+            echo "- Configured sync expectation \`${EXPECTED_SYNC_RESULT}\` passed for both stable canary actions"
             echo "- Exact synthetic session and payment were read back and rendered"
             echo "- Exact-origin credentialed CORS and HTTPS-only traffic passed"
             echo "- No screenshots, traces, videos, HARs, credentials, JWTs, roster rows, or record identifiers were published"

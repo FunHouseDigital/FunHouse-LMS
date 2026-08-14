@@ -15,12 +15,15 @@ uses `web` as its root directory. Migration 010 and the dedicated Supabase
 runtime-role verification completed before the client-identity API revision was
 merged.
 
-Deployment success is not release acceptance. **Verify Live API Role Access**
-must still be rerun against the exact current release, all six browser smoke
-checks must pass, and Phase 1 field acceptance must be recorded before real
-learner data is used. Record the operator-approved stable PWA origin rather than
-inferring it from a transient deployment URL. AWS remains the optional future
-full-stack path documented below.
+Deployment success is not release acceptance. For every candidate release,
+**Verify Live API Role Access** must pass against the exact current SHA, then
+**Verify Live PWA Browser** must pass twice for that same SHA (the second stable-
+identity run proves replay safety), and the
+[Phase 1 field-acceptance rehearsal](field-acceptance-checklist.md) must be
+recorded on the actual lounge device before real learner data is used. Record
+the operator-approved stable PWA origin rather than inferring it from a
+transient deployment URL. AWS remains the optional future full-stack path
+documented below.
 
 ### A. Recreate or replace the PWA project **[FOUNDER-RUN / VERCEL ACCOUNT]**
 
@@ -48,7 +51,12 @@ replacement project or a new environment:
    ```
 
    This is a Vite build-time value. Adding or changing it requires a new PWA
-   deployment. Do not point production builds at a preview API hostname.
+   deployment. Do not point production builds at a preview API hostname. The
+   build also consumes Vercel's non-secret `VERCEL_GIT_COMMIT_SHA` system value
+   and fails closed when Vercel cannot supply a 40-character Git SHA; do not
+   replace it with a manually maintained release variable. The resulting app
+   displays the first seven characters as **Release `<short-sha>`** so an
+   operator can identify the shell actually running on a device.
 4. Deploy `main`, wait for **Ready**, and record the generated HTTPS origin as
    `PWA_ORIGIN`, for example `https://funhouse-revenue-pwa.vercel.app`. An
    origin contains only scheme and hostname: no path and no trailing slash.
@@ -100,7 +108,10 @@ Expected: every request succeeds over HTTPS. The app shell, deep-link fallback,
 `sw.js`, and manifest return `Cache-Control: public, max-age=0,
 must-revalidate`. The content-hashed asset returns `Cache-Control: public,
 max-age=31536000, immutable`. Complete the browser-only checks in
-[`docs/smoke-test-checklist.md`](smoke-test-checklist.md).
+[`docs/smoke-test-checklist.md`](smoke-test-checklist.md), then complete the
+synthetic-only
+[Phase 1 field-acceptance rehearsal](field-acceptance-checklist.md) on the
+actual lounge device.
 
 ### Staff login secrets and Loyiso rotation **[FOUNDER-RUN / GITHUB ACCOUNT]**
 
