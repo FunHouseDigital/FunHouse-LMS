@@ -409,6 +409,79 @@ export async function getBalances(
 
 // ---- Meta ----
 
+/** Auth metadata keys; the owner is the lifecycle marker that owns the tuple. */
+export const SESSION_META_KEY = 'session';
+export const SESSION_KEY_META_KEY = 'session_key';
+export const SESSION_OWNER_META_KEY = 'session_owner';
+
+/** One atomically observed persisted authentication lifecycle. */
+export interface PersistedAuthMetadata {
+  encryptedSession: EncryptedField | undefined;
+  sessionKey: CryptoKey | undefined;
+  owner: string | null;
+}
+
+function normalizeAuthOwner(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/** Read the complete auth tuple from one IndexedDB transaction. */
+export async function getAuthMetadata(): Promise<PersistedAuthMetadata> {
+  const db = await getDb();
+  const tx = db.transaction('meta', 'readonly');
+  const [sessionEntry, keyEntry, ownerEntry] = await Promise.all([
+    tx.store.get(SESSION_META_KEY),
+    tx.store.get(SESSION_KEY_META_KEY),
+    tx.store.get(SESSION_OWNER_META_KEY),
+  ]);
+  await tx.done;
+  return {
+    encryptedSession: sessionEntry?.value as EncryptedField | undefined,
+    sessionKey: keyEntry?.value as CryptoKey | undefined,
+    owner: normalizeAuthOwner(ownerEntry?.value),
+  };
+}
+
+/** Atomically replace the encrypted session, CryptoKey, and lifecycle owner. */
+export async function replaceAuthMetadata(
+  encryptedSession: EncryptedField,
+  sessionKey: CryptoKey,
+  owner: string,
+): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('meta', 'readwrite');
+  await Promise.all([
+    tx.store.put({ key: SESSION_META_KEY, value: encryptedSession }),
+    tx.store.put({ key: SESSION_KEY_META_KEY, value: sessionKey }),
+    tx.store.put({ key: SESSION_OWNER_META_KEY, value: owner }),
+  ]);
+  await tx.done;
+}
+
+/**
+ * Delete the auth tuple only when its owner still matches at transaction time.
+ * A `null` expectation removes legacy/unowned entries, never an owned lifecycle.
+ */
+export async function deleteAuthMetadataIfOwnedBy(
+  expectedOwner: string | null,
+): Promise<boolean> {
+  const db = await getDb();
+  const tx = db.transaction('meta', 'readwrite');
+  const ownerEntry = await tx.store.get(SESSION_OWNER_META_KEY);
+  if (normalizeAuthOwner(ownerEntry?.value) !== expectedOwner) {
+    await tx.done;
+    return false;
+  }
+
+  await Promise.all([
+    tx.store.delete(SESSION_META_KEY),
+    tx.store.delete(SESSION_KEY_META_KEY),
+    tx.store.delete(SESSION_OWNER_META_KEY),
+  ]);
+  await tx.done;
+  return true;
+}
+
 /** Read a `meta` value by key. */
 export async function getMeta<T = unknown>(key: string): Promise<T | undefined> {
   const db = await getDb();
@@ -420,6 +493,12 @@ export async function getMeta<T = unknown>(key: string): Promise<T | undefined> 
 export async function setMeta(key: string, value: unknown): Promise<void> {
   const db = await getDb();
   await db.put('meta', { key, value });
+}
+
+/** Delete a `meta` value by key without touching queued or cached data. */
+export async function deleteMeta(key: string): Promise<void> {
+  const db = await getDb();
+  await db.delete('meta', key);
 }
 
 /** Return the device_id, generating and persisting one once per install (Req 4.3). */

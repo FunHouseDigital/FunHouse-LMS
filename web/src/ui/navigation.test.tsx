@@ -134,7 +134,9 @@ describe('Role-gated navigation + route guard (Req 2)', () => {
       expect(screen.getByRole('heading', { name: 'Today' })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: /log out/i }));
+    await user.click(screen.getByRole('button', { name: /^log out$/i }));
+    expect(screen.getByRole('group', { name: /confirm logout/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /yes, log out/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();

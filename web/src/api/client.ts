@@ -5,10 +5,12 @@
  *  - rejects non-HTTPS base URLs at construction (Req 17.4), with a documented
  *    exception for `http://localhost` / loopback so the app can run against a
  *    local dev API and in tests;
- *  - attaches `Authorization: Bearer <token>` to every request when a valid
- *    session token is supplied via `getToken` (Req 1.5);
- *  - surfaces `401` distinctly as an `UnauthorizedError` so the Auth_Manager can
- *    clear the JWT and route to login (Req 1.7).
+ *  - captures one immutable `{token, generation}` snapshot for each protected
+ *    request and attaches its bearer token when present (Req 1.5);
+ *  - reports a protected-request `401` with that request-start identity so the
+ *    Auth_Manager can reject stale account responses before central revocation;
+ *  - keeps login explicitly public: no bearer and no revocation callback for a
+ *    login `401`, which remains a generic invalid-credentials outcome (Req 1.3).
  *
  * Request/response shapes bind to the confirmed Spec 2 contract (design.md).
  */
@@ -23,6 +25,7 @@ import type {
   SyncAction,
   SyncResult,
 } from '../domain/types';
+import type { AuthRequestSnapshot } from '../domain/authManager';
 
 /** Thrown on any `401` response so the Auth_Manager can react (Req 1.7). */
 export class UnauthorizedError extends Error {
@@ -48,8 +51,15 @@ export class ApiError extends Error {
 export interface ApiClientConfig {
   /** Base URL of the Container_API. Must be HTTPS (or http://localhost for dev/tests). */
   baseUrl: string;
-  /** Supplies the current bearer token, or null/undefined when unauthenticated. */
+  /**
+   * Supplies one immutable token/lifecycle identity per protected request.
+   * Preferred over `getToken` so late 401 responses can be rejected safely.
+   */
+  getAuthSnapshot?: () => AuthRequestSnapshot;
+  /** Backwards-compatible token supplier for tests and simple consumers. */
   getToken?: () => string | null | undefined;
+  /** Called only for a protected request's 401, with its request-start identity. */
+  onUnauthorized?: (snapshot: AuthRequestSnapshot) => void;
   /** Injectable fetch implementation (defaults to the global `fetch`); used by tests. */
   fetchImpl?: typeof fetch;
   /** Maximum login request duration before aborting (defaults to 15 seconds). */
@@ -85,7 +95,8 @@ export function isAllowedBaseUrl(baseUrl: string): boolean {
 
 export class ContainerApiClient {
   private readonly baseUrl: string;
-  private readonly getToken: () => string | null | undefined;
+  private readonly getAuthSnapshot: () => AuthRequestSnapshot;
+  private readonly onUnauthorized?: (snapshot: AuthRequestSnapshot) => void;
   private readonly fetchImpl: typeof fetch;
   private readonly loginTimeoutMs: number;
 
@@ -98,7 +109,10 @@ export class ContainerApiClient {
     }
     // Normalise: drop any trailing slash so path joining is predictable.
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
-    this.getToken = config.getToken ?? (() => undefined);
+    this.getAuthSnapshot =
+      config.getAuthSnapshot ??
+      (() => ({ token: config.getToken?.() ?? null, generation: 0 }));
+    this.onUnauthorized = config.onUnauthorized;
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.loginTimeoutMs = config.loginTimeoutMs ?? 15_000;
   }
@@ -108,12 +122,15 @@ export class ContainerApiClient {
     path: string,
     body?: unknown,
     signal?: AbortSignal,
+    protectedRequest = true,
   ): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
 
-    const token = this.getToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
+    const authSnapshot = protectedRequest
+      ? Object.freeze({ ...this.getAuthSnapshot() })
+      : null;
+    if (authSnapshot?.token) {
+      headers.Authorization = `Bearer ${authSnapshot.token}`;
     }
 
     const init: RequestInit = { method, headers, signal };
@@ -125,6 +142,7 @@ export class ContainerApiClient {
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
 
     if (response.status === 401) {
+      if (authSnapshot) this.onUnauthorized?.(authSnapshot);
       throw new UnauthorizedError();
     }
 
@@ -156,6 +174,7 @@ export class ContainerApiClient {
         '/auth/login',
         { identifier, password },
         controller.signal,
+        false,
       );
     } finally {
       globalThis.clearTimeout(timeout);

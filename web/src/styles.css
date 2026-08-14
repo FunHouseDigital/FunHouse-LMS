@@ -437,6 +437,34 @@ button[aria-pressed='true'] {
   width: 100%;
 }
 
+.logout-confirmation {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(8, 14, 25, 0.72);
+}
+
+.logout-confirmation p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+}
+
+.logout-confirmation button {
+  width: 100%;
+}
+
+.session-restoring {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 1.5rem;
+  color: var(--text-soft);
+  background: var(--bg);
+}
+
 label {
   display: grid;
   gap: 0.45rem;

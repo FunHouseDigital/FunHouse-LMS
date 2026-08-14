@@ -6,6 +6,7 @@
  * app restricts navigation to the login screen only (Req 2.3). A logout control
  * is shown while authenticated.
  */
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../state/authState';
 import { navScreensFor, type NavAuthState } from '../domain/navigation';
@@ -13,6 +14,7 @@ import { SyncStatusSurface } from './SyncStatusSurface';
 
 export function AppShellNav() {
   const { isAuthenticated, role, logout } = useAuth();
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
   const state: NavAuthState = { authenticated: isAuthenticated, role };
 
   // Unauthenticated: navigation is restricted to login only (Req 2.3) — the
@@ -45,9 +47,25 @@ export function AppShellNav() {
         <div className="sidebar-utility">
           {role && <span className="role-chip">{role}</span>}
           <SyncStatusSurface />
-          <button className="sidebar-logout" type="button" onClick={logout}>
-            Log out
-          </button>
+          {confirmingLogout ? (
+            <div className="logout-confirmation" role="group" aria-label="Confirm logout">
+              <p>Sign out of this device?</p>
+              <button className="sidebar-logout" type="button" onClick={logout}>
+                Yes, log out
+              </button>
+              <button type="button" onClick={() => setConfirmingLogout(false)}>
+                Stay signed in
+              </button>
+            </div>
+          ) : (
+            <button
+              className="sidebar-logout"
+              type="button"
+              onClick={() => setConfirmingLogout(true)}
+            >
+              Log out
+            </button>
+          )}
         </div>
       </nav>
     </aside>

@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { UnauthorizedError } from '../api/client';
 import { decodeJwtPayload } from '../domain/authManager';
 import type { PlayerOut, ProductOut, Session } from '../domain/types';
 import { clearAuthenticatedResponseCaches } from '../pwa/authenticatedCaches';
@@ -77,7 +76,7 @@ function cacheKey(dataset: 'players' | 'products', scope: string | null): string
 }
 
 export function ReferenceDataProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated, session, client, logout } = useAuth();
+  const { isAuthenticated, session, client } = useAuth();
   const cacheScope = useMemo(() => sessionScopeKey(session), [session]);
   const productsRequired = session?.role !== 'facilitator';
   const playersCacheKey = cacheKey('players', cacheScope);
@@ -135,14 +134,6 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
     ]);
     if (generation !== requestGeneration.current || activeScope.current !== cacheScope) return;
 
-    const unauthorized = [playersResult, productsResult].some(
-      (result) => result.status === 'rejected' && result.reason instanceof UnauthorizedError,
-    );
-    if (unauthorized) {
-      logout();
-      return;
-    }
-
     const refreshedAt = new Date().toISOString();
     const playerWrite =
       playersResult.status === 'fulfilled'
@@ -171,7 +162,6 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
     cacheScope,
     client,
     isAuthenticated,
-    logout,
     playersCacheKey,
     productsCacheKey,
     productsRequired,
@@ -225,12 +215,13 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
         }
         setRevision((value) => value + 1);
         return true;
-      } catch (error) {
-        if (error instanceof UnauthorizedError) logout();
+      } catch {
+        // The centrally wired client owns token-aware 401 revocation. This
+        // request only reports whether fresh balances were stored.
         return false;
       }
     },
-    [cacheScope, client, isAuthenticated, logout],
+    [cacheScope, client, isAuthenticated],
   );
 
   useEffect(() => {

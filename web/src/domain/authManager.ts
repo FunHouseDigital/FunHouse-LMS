@@ -7,8 +7,9 @@
  *  - the Container_API login call (injected as `loginFn` so it is trivially
  *    mockable in tests and so this module has no hard dependency on a
  *    constructed client),
- *  - the Local_Store `meta` entries (`crypto_salt`, encrypted `session`), and
- *  - the Crypto service (derive/hold the in-memory AES session key).
+ *  - the Local_Store `meta` entries (`crypto_salt` and an atomically replaced
+ *    encrypted-session / non-extractable-key / lifecycle-owner tuple), and
+ *  - the Crypto service (derive/hold the AES session key).
  *
  * ### Role source (documented decision)
  * The Spec 2 `POST /auth/login` `200` body is only
@@ -24,16 +25,23 @@
  */
 import type { LoginResponse, Session } from './types';
 import {
+  deleteAuthMetadataIfOwnedBy,
+  getAuthMetadata,
   getMeta,
+  replaceAuthMetadata,
+  SESSION_KEY_META_KEY,
+  SESSION_META_KEY,
+  SESSION_OWNER_META_KEY,
   setMeta,
 } from '../store/localStore';
 import {
   clearSessionKey,
+  decryptPayload,
   encryptPayload,
   generateSalt,
-  getSessionKey,
+  deriveKey,
   hasSessionKey,
-  initSessionKey,
+  setSessionKey,
 } from './crypto';
 import { UnauthorizedError } from '../api/client';
 
@@ -45,9 +53,145 @@ const VALID_ROLES: readonly Role[] = ['manager', 'founder', 'facilitator'];
 /** Default re-auth grace for already-displayed personal data (Req 17.3). */
 export const GRACE_MS = 30_000;
 
-/** Meta keys owned by the Auth_Manager. */
-export const SESSION_META_KEY = 'session';
+/** Auth metadata keys owned by the Auth_Manager. */
+export { SESSION_KEY_META_KEY, SESSION_META_KEY, SESSION_OWNER_META_KEY };
 export const CRYPTO_SALT_META_KEY = 'crypto_salt';
+
+/** Maximum permitted rounding difference between JWT `exp` and `expires_at`. */
+export const JWT_EXPIRY_TOLERANCE_MS = 1_000;
+
+/**
+ * Non-sensitive application marker used for synchronous, cross-context
+ * revocation. The bearer token and CryptoKey never enter localStorage.
+ */
+export const SESSION_ACTIVE_STORAGE_KEY = 'funhouse_session_active';
+
+/** Cross-context mutex for auth tuple restore, replacement, and cleanup. */
+export const AUTH_SESSION_LOCK_NAME = 'funhouse-auth-session';
+
+let sameContextAuthTail: Promise<void> = Promise.resolve();
+
+/**
+ * Serialize the full durable-auth critical section across same-origin contexts
+ * when Web Locks are available. The module tail preserves ordering between
+ * managers in test/legacy environments; transaction-time owner checks remain
+ * the correctness backstop for contexts that cannot share this lock.
+ */
+function withAuthSessionLock<T>(operation: () => Promise<T>): Promise<T> {
+  const locks = typeof globalThis.navigator === 'undefined'
+    ? undefined
+    : globalThis.navigator.locks;
+  if (locks) {
+    // The Web Locks runtime awaits promise-returning callbacks. Older DOM
+    // typings model the callback result synchronously, hence this narrowing.
+    return locks.request(AUTH_SESSION_LOCK_NAME, () => operation()) as unknown as Promise<T>;
+  }
+
+  const result = sameContextAuthTail.then(operation, operation);
+  sameContextAuthTail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/** Immutable identity captured once when a protected request starts. */
+export interface AuthRequestSnapshot {
+  readonly token: string | null;
+  readonly generation: number;
+}
+
+function readActiveSessionMarker(): string | null {
+  try {
+    const marker = globalThis.localStorage?.getItem(SESSION_ACTIVE_STORAGE_KEY);
+    return marker && marker.length > 0 ? marker : null;
+  } catch {
+    return null;
+  }
+}
+
+function createSessionMarker(): string {
+  return globalThis.crypto.randomUUID();
+}
+
+function markSessionActive(marker: string): void {
+  globalThis.localStorage.setItem(SESSION_ACTIVE_STORAGE_KEY, marker);
+}
+
+function removeSessionMarker(expectedMarker: string | null): void {
+  try {
+    const current = readActiveSessionMarker();
+    if (current === expectedMarker) {
+      globalThis.localStorage?.removeItem(SESSION_ACTIVE_STORAGE_KEY);
+    }
+  } catch {
+    // A denied localStorage read is fail-closed: restoration also returns null.
+  }
+}
+
+function isPersistedSessionKey(value: unknown): value is CryptoKey {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<CryptoKey>;
+  const algorithm = candidate.algorithm as KeyAlgorithm | undefined;
+  return (
+    candidate.type === 'secret' &&
+    candidate.extractable === false &&
+    algorithm?.name === 'AES-GCM' &&
+    Array.isArray(candidate.usages) &&
+    candidate.usages.includes('encrypt') &&
+    candidate.usages.includes('decrypt')
+  );
+}
+
+/**
+ * Validate local coherence of a previously issued session. This deliberately
+ * does not attempt JWT signature verification; the server remains authoritative.
+ */
+function isCoherentFreshSession(value: unknown, now: number): value is Session {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<Session>;
+  if (
+    typeof candidate.access_token !== 'string' ||
+    typeof candidate.expires_at !== 'string' ||
+    typeof candidate.role !== 'string' ||
+    !(VALID_ROLES as readonly string[]).includes(candidate.role) ||
+    (candidate.location_id !== null && typeof candidate.location_id !== 'string')
+  ) {
+    return false;
+  }
+
+  const claims = decodeJwtPayload(candidate.access_token);
+  const subject = typeof claims?.sub === 'string' ? claims.sub.trim() : '';
+  const issuedAtSeconds = claims?.iat;
+  const tokenExpirySeconds = claims?.exp;
+  const tokenRole = claims?.role;
+  const tokenLocation = claims?.location_id;
+  const responseExpiryMs = new Date(candidate.expires_at).getTime();
+
+  return (
+    subject !== '' &&
+    typeof issuedAtSeconds === 'number' &&
+    Number.isFinite(issuedAtSeconds) &&
+    Number.isInteger(issuedAtSeconds) &&
+    typeof tokenExpirySeconds === 'number' &&
+    Number.isFinite(tokenExpirySeconds) &&
+    Number.isInteger(tokenExpirySeconds) &&
+    tokenExpirySeconds > issuedAtSeconds &&
+    Number.isFinite(responseExpiryMs) &&
+    responseExpiryMs > now &&
+    Math.abs(tokenExpirySeconds * 1000 - responseExpiryMs) < JWT_EXPIRY_TOLERANCE_MS &&
+    tokenRole === candidate.role &&
+    (typeof tokenLocation === 'string' || tokenLocation === null) &&
+    tokenLocation === candidate.location_id
+  );
+}
+
+class StaleAuthLifecycleError extends Error {
+  constructor() {
+    super('Authentication lifecycle changed');
+    this.name = 'StaleAuthLifecycleError';
+  }
+}
 
 /** Field-level validation errors for the login form (Req 1.4). */
 export interface FieldErrors {
@@ -169,6 +313,9 @@ export class AuthManager {
   private readonly nowFn: () => number;
   private readonly graceMs: number;
   private session: Session | null = null;
+  private pendingRevocation: Promise<void> = Promise.resolve();
+  private lifecycleGeneration = 0;
+  private activeSessionMarker: string | null = null;
 
   constructor(options: AuthManagerOptions) {
     this.loginFn = options.loginFn;
@@ -176,9 +323,130 @@ export class AuthManager {
     this.graceMs = options.graceMs ?? GRACE_MS;
   }
 
+  /**
+   * Restore an active, locally coherent session after Android recreates the
+   * installed PWA process. This proves neither the JWT signature nor current
+   * server validity; the next protected request remains server-authoritative.
+   */
+  async restoreSession(): Promise<Session | null> {
+    if (this.session && this.isAuthenticated()) return this.session;
+
+    const restoreGeneration = this.lifecycleGeneration;
+    await this.pendingRevocation;
+    if (this.lifecycleGeneration !== restoreGeneration) {
+      return this.session && this.isAuthenticated() ? this.session : null;
+    }
+
+    try {
+      return await withAuthSessionLock(async () => {
+        if (this.lifecycleGeneration !== restoreGeneration) {
+          return this.session && this.isAuthenticated() ? this.session : null;
+        }
+
+        const restoreMarker = readActiveSessionMarker();
+        const metadata = await getAuthMetadata();
+        if (this.lifecycleGeneration !== restoreGeneration) {
+          return this.session && this.isAuthenticated() ? this.session : null;
+        }
+
+        if (restoreMarker === null) {
+          // Read metadata first, then recheck the marker. If a lock-less peer
+          // published a new marker meanwhile, leave its lifecycle untouched.
+          // Otherwise transaction-time ownership decides whether stale owned
+          // or legacy ownerless metadata may be removed.
+          if (readActiveSessionMarker() === null) {
+            this.invalidateLocalLifecycle();
+            await deleteAuthMetadataIfOwnedBy(metadata.owner);
+          }
+          return null;
+        }
+
+        // A non-null marker may precede a concurrent login's atomic metadata
+        // replacement on browsers without Web Locks. Fail closed on mismatch;
+        // never delete metadata or remove a marker whose ownership is unclear.
+        if (metadata.owner !== restoreMarker) return null;
+
+        if (!metadata.encryptedSession || !isPersistedSessionKey(metadata.sessionKey)) {
+          this.invalidateLocalLifecycle();
+          removeSessionMarker(restoreMarker);
+          await deleteAuthMetadataIfOwnedBy(restoreMarker);
+          return null;
+        }
+
+        let restored: unknown;
+        try {
+          restored = await decryptPayload<unknown>(
+            metadata.sessionKey,
+            metadata.encryptedSession,
+          );
+        } catch {
+          restored = null;
+        }
+        if (!isCoherentFreshSession(restored, this.nowFn())) {
+          if (this.lifecycleGeneration === restoreGeneration) {
+            this.invalidateLocalLifecycle();
+            removeSessionMarker(restoreMarker);
+            await deleteAuthMetadataIfOwnedBy(restoreMarker);
+          }
+          return this.session && this.isAuthenticated() ? this.session : null;
+        }
+
+        // Compare-and-commit: a local revoke or a lock-less peer's marker
+        // replacement during any await wins. No await occurs after this guard.
+        if (
+          this.lifecycleGeneration !== restoreGeneration ||
+          readActiveSessionMarker() !== metadata.owner
+        ) {
+          return this.session && this.isAuthenticated() ? this.session : null;
+        }
+
+        this.lifecycleGeneration += 1;
+        this.activeSessionMarker = metadata.owner;
+        setSessionKey(metadata.sessionKey);
+        this.session = restored;
+        return restored;
+      });
+    } catch {
+      // Storage/lock failures are fail-closed. Ownership is unknown here, so
+      // leave durable metadata for an owner-aware retry rather than deleting it.
+      return this.session && this.isAuthenticated() ? this.session : null;
+    }
+  }
+
   /** The in-memory authenticated session, or `null`. */
   getSession(): Session | null {
     return this.session;
+  }
+
+  /** Capture the token and lifecycle identity atomically at request start. */
+  getAuthRequestSnapshot(now: number = this.nowFn()): AuthRequestSnapshot {
+    return Object.freeze({
+      token: this.getToken(now),
+      generation: this.lifecycleGeneration,
+    });
+  }
+
+  /**
+   * Apply a cross-context marker-removal event only to the lifecycle that owned
+   * the removed marker. A delayed event cannot revoke a replacement marker.
+   */
+  handleExternalMarkerRemoval(removedMarker: string | null): boolean {
+    if (!removedMarker || removedMarker !== this.activeSessionMarker) return false;
+    this.revokeForExternalMarkerChange();
+    return true;
+  }
+
+  /** Revalidate marker ownership after foregrounding when events may be missed. */
+  handleExternalMarkerInvalidation(): boolean {
+    if (
+      this.activeSessionMarker !== null &&
+      readActiveSessionMarker() === this.activeSessionMarker
+    ) {
+      return false;
+    }
+    if (!this.session) return false;
+    this.revokeForExternalMarkerChange();
+    return true;
   }
 
   /** The role for nav gating, or `null` when unauthenticated. */
@@ -234,6 +502,14 @@ export class AuthManager {
     if (hasFieldErrors(fieldErrors)) {
       return { ok: false, kind: 'validation', fieldErrors };
     }
+    // Reserve a unique lifecycle before the first await. Every revoke after
+    // login invocation therefore advances past this attempt and wins.
+    const loginGeneration = ++this.lifecycleGeneration;
+    const cleanupAtStart = this.pendingRevocation;
+    await cleanupAtStart;
+    if (this.lifecycleGeneration !== loginGeneration) {
+      return { ok: false, kind: 'invalid_credentials' };
+    }
 
     let response: LoginResponse;
     try {
@@ -245,60 +521,156 @@ export class AuthManager {
       throw err;
     }
 
-    const role = decodeRoleFromJwt(response.access_token);
-    if (role === null) {
-      clearSessionKey();
+    if (this.lifecycleGeneration !== loginGeneration) {
       return { ok: false, kind: 'invalid_credentials' };
     }
+
+    const role = decodeRoleFromJwt(response.access_token);
     const location_id = decodeLocationFromJwt(response.access_token);
+    if (role === null) {
+      return { ok: false, kind: 'invalid_credentials' };
+    }
+    const session: Session = {
+      access_token: response.access_token,
+      expires_at: String(response.expires_at),
+      role,
+      location_id,
+    };
+    if (!isCoherentFreshSession(session, this.nowFn())) {
+      return { ok: false, kind: 'invalid_credentials' };
+    }
 
+    let loginOwner: string | null = null;
     try {
-      // Derive/hold the encryption key from the login secret + per-device salt.
-      let salt = await getMeta<string>(CRYPTO_SALT_META_KEY);
-      if (!salt) {
-        salt = generateSalt();
-        await setMeta(CRYPTO_SALT_META_KEY, salt);
-      }
-      await initSessionKey(password, salt);
+      await withAuthSessionLock(async () => {
+        this.assertLifecycle(loginGeneration);
 
-      const session: Session = {
-        access_token: response.access_token,
-        // `expires_at` arrives as an ISO string over JSON; normalise defensively.
-        expires_at: String(response.expires_at),
-        role,
-        location_id,
-      };
+        let salt = await getMeta<string>(CRYPTO_SALT_META_KEY);
+        this.assertLifecycle(loginGeneration);
+        if (!salt) {
+          salt = generateSalt();
+          await setMeta(CRYPTO_SALT_META_KEY, salt);
+          this.assertLifecycle(loginGeneration);
+        }
 
-      // Persist encrypted-at-rest (Req 1.2, 17.1) using the in-memory session key.
-      const key = getSessionKey();
-      if (key) {
+        // Derive and encrypt before disturbing the current lifecycle. The key
+        // remains attempt-local until owner-tagged persistence succeeds.
+        const key = await deriveKey(password, salt);
+        this.assertLifecycle(loginGeneration);
         const encrypted = await encryptPayload(key, session);
-        await setMeta(SESSION_META_KEY, encrypted);
-      }
+        this.assertLifecycle(loginGeneration);
+        loginOwner = createSessionMarker();
+        const attemptOwner = loginOwner;
 
-      this.session = session;
+        // Publish the opaque owner before writing its metadata. The remove/set
+        // pair has no await: old contexts receive the removal event, while an
+        // absent-marker cleanup can only have observed the previous owner.
+        this.session = null;
+        clearSessionKey();
+        const replacedMarker = readActiveSessionMarker();
+        removeSessionMarker(replacedMarker);
+        markSessionActive(attemptOwner);
+        this.activeSessionMarker = null;
+
+        // Session, key, and owner commit all-or-nothing. If this attempt becomes
+        // stale, cleanup below is conditional on attemptOwner at transaction time.
+        await replaceAuthMetadata(encrypted, key, attemptOwner);
+        this.assertLifecycle(loginGeneration);
+        if (readActiveSessionMarker() !== attemptOwner) {
+          throw new StaleAuthLifecycleError();
+        }
+
+        // No await may occur between the final guards and local publication.
+        this.activeSessionMarker = attemptOwner;
+        setSessionKey(key);
+        this.session = session;
+      });
       return { ok: true, session };
     } catch (error) {
-      // Never leave either a previous session or a derived key active after
-      // incomplete persistence of replacement credentials.
-      this.session = null;
-      clearSessionKey();
+      // This attempt can remove only its own marker/metadata. If a peer has
+      // already installed owner N, both operations are harmless no-ops.
+      if (loginOwner !== null) {
+        this.queuePersistedSessionCleanup(loginOwner);
+      }
+      await this.pendingRevocation;
+
+      if (
+        error instanceof StaleAuthLifecycleError ||
+        this.lifecycleGeneration !== loginGeneration
+      ) {
+        return { ok: false, kind: 'invalid_credentials' };
+      }
+
+      // Preserve every persisted owner except this failed attempt. The current
+      // manager still fails closed in memory, matching a storage/crypto outage.
+      this.invalidateLocalLifecycle();
       throw new SecureStorageUnavailableError(error);
     }
   }
 
-  /**
-   * Clear the JWT and in-memory session key and route intent to login. This is
-   * the handler for an expired token (Req 1.6) and for a `401` from any call
-   * (Req 1.7). It deliberately does NOT touch the Sync_Queue, so all queued
-   * Unsynced_Items are retained in the Local_Store (Req 1.6).
-   */
-  handleUnauthorized(): void {
+  private assertLifecycle(generation: number): void {
+    if (this.lifecycleGeneration !== generation) {
+      throw new StaleAuthLifecycleError();
+    }
+  }
+
+  private invalidateLocalLifecycle(): void {
+    this.lifecycleGeneration += 1;
     this.session = null;
+    this.activeSessionMarker = null;
     clearSessionKey();
   }
 
-  /** Explicit logout — same effect as {@link handleUnauthorized}. */
+  private queuePersistedSessionCleanup(expectedOwner: string | null): void {
+    this.pendingRevocation = this.pendingRevocation.then(async () => {
+      try {
+        await withAuthSessionLock(async () => {
+          // Compare-and-remove runs under the same cross-context lock as marker
+          // replacement; an old M cleanup therefore cannot remove marker N.
+          removeSessionMarker(expectedOwner);
+          await deleteAuthMetadataIfOwnedBy(expectedOwner);
+        });
+      } catch {
+        // Best-effort cleanup is retried by a later absent-marker startup.
+      }
+    });
+  }
+
+  private revokeForExternalMarkerChange(): void {
+    // The context that changed the shared marker owns durable cleanup. Other
+    // contexts only invalidate their local lifecycle; delayed events therefore
+    // cannot target either old or replacement IndexedDB credentials.
+    this.invalidateLocalLifecycle();
+  }
+
+  private revokePersistedSession(
+    expectedOwner: string | null = this.activeSessionMarker,
+  ): void {
+    // Revocation is fail-closed in memory immediately. Marker compare-removal
+    // and durable owner-conditional deletion then share the replacement lock,
+    // so neither can target a newer lifecycle.
+    this.invalidateLocalLifecycle();
+    this.queuePersistedSessionCleanup(expectedOwner);
+  }
+
+  /**
+   * Revoke for a protected-request 401 only if its immutable request-start
+   * identity still belongs to the current lifecycle.
+   */
+  handleUnauthorized(snapshot?: AuthRequestSnapshot): boolean {
+    if (
+      snapshot &&
+      (snapshot.token === null ||
+        snapshot.generation !== this.lifecycleGeneration ||
+        snapshot.token !== this.session?.access_token)
+    ) {
+      return false;
+    }
+    this.revokePersistedSession();
+    return true;
+  }
+
+  /** Explicit logout — same revocation while retaining queued/scoped data. */
   logout(): void {
     this.handleUnauthorized();
   }

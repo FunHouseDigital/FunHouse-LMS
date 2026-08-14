@@ -3,11 +3,25 @@
  *
  * Personal-data payloads are encrypted with WebCrypto AES-GCM (256-bit) before
  * being written to IndexedDB. The AES key is derived via PBKDF2 from a
- * login-time secret combined with a stored per-device `crypto_salt`, and is
- * held only as a NON-EXTRACTABLE `CryptoKey` in memory for the authenticated
- * session (never persisted in extractable form). Each record uses a fresh
- * random 96-bit IV, stored alongside the ciphertext in the `EncryptedField`
- * envelope. See design.md "POPIA on-device protection" / "Crypto service".
+ * login-time secret combined with a stored per-device `crypto_salt`. The key is
+ * non-extractable: its material can never be exported. While an unexpired
+ * authenticated session is active, the CryptoKey is structured-cloned into the
+ * origin-scoped IndexedDB so an Android-installed PWA can survive browser
+ * process recreation without exporting the key bytes. The encrypted session,
+ * key, and opaque lifecycle owner are replaced atomically in one IndexedDB
+ * transaction. Restore/replacement/cleanup critical sections use a same-origin
+ * Web Lock where available (with same-context ordering otherwise), and cleanup
+ * deletes the tuple only when its owner still matches inside the deleting
+ * transaction. A later absent-marker startup retries stale or legacy ownerless
+ * cleanup. These are application coordination guarantees, not a stronger key
+ * boundary: non-extractability blocks export, not cryptographic use by
+ * same-origin code holding the key object. Explicit logout, expiry, or a
+ * current-lifecycle 401 drops the in-memory handle synchronously; marker
+ * compare-removal and owner-conditional tuple deletion share the durable-auth
+ * lock. An external marker-removal observer clears only its local handle. Each
+ * record uses a fresh random 96-bit IV, stored alongside the ciphertext in the
+ * `EncryptedField` envelope. See design.md "POPIA on-device protection" /
+ * "Crypto service".
  *
  * Environment note: this uses `globalThis.crypto.subtle`, which is available in
  * browsers and in Node 20+ (Node exposes a global WebCrypto). Under
@@ -132,7 +146,7 @@ export async function decryptPayload<T = unknown>(
   return JSON.parse(await decrypt(key, field)) as T;
 }
 
-// ---- Session key held only in memory (Req 17.2, 17.3) ----
+// ---- Active in-memory handle to the persistently cloned session key ----
 
 let sessionKey: CryptoKey | null = null;
 

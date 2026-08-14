@@ -224,7 +224,13 @@ Each personal-data-bearing record stores its sensitive fields as an **encrypted 
   - `device_id` — a UUID generated once per device/install
   - `last_successful_sync` — ISO timestamp (drives >5-day stale warning, Req 6.4)
   - `session` — encrypted `{ access_token, expires_at, role, location_id }` (Req 1.2, 17)
+  - `session_key` — a persistently structured-cloned, non-extractable AES-GCM `CryptoKey` for the active installed-PWA session
+  - `session_owner` — the same opaque per-lifecycle UUID carried by the active `localStorage` marker
   - `crypto_salt` — salt for key derivation
+
+The `session`, `session_key`, and `session_owner` entries are read and replaced as one IndexedDB transaction. Cleanup reads `session_owner` and deletes all three entries in the same readwrite transaction only when it still equals the expected old owner; `owner = null` is reserved for idempotent cleanup of legacy/unowned auth entries.
+
+A separate non-secret `localStorage` marker (`funhouse_session_active`) carries the opaque owner and is the synchronous application signal for whether restoration is allowed. It is written before a new owner tuple, and restoration requires exact marker/`session_owner` equality. Restore, replacement, and cleanup critical sections use one same-origin Web Lock where available, with a module-wide promise chain as a same-context fallback. The IndexedDB owner condition remains the correctness backstop: cleanup delayed from owner M cannot delete owner N. Cross-context marker removal invalidates only managers that owned the removed value; observers clear local memory/React state but do not delete shared credentials. An absent-marker startup reads the tuple, rechecks that the marker is still absent, then conditionally deletes the observed owner (or legacy ownerless entries). The marker, owner, and lock are coordination mechanisms rather than cryptographic or tamper-proof boundaries.
 
 `client_id` generation uses `crypto.randomUUID()`; `device_id` is generated once and stored in `meta`, guaranteeing per-device uniqueness of every action's `client_id` (Req 4.3).
 
@@ -233,11 +239,14 @@ Each personal-data-bearing record stores its sensitive fields as an **encrypted 
 Responsibilities and rules:
 
 - **Login (Req 1.1, 1.4)**: validate non-empty `identifier` and `password` client-side; block submit + show field-level message when empty (1.4). On submit, `POST /auth/login`.
-- **Success (Req 1.2)**: store `{access_token, expires_at, role, location_id}` in the `meta.session` entry in **device-protected storage** — IndexedDB with the personal/session payload encrypted at rest via the Crypto service (browsers expose no OS keychain; this is the honest best-effort, see POPIA limitations).
-- **401 on login (Req 1.3)**: show generic "invalid credentials"; store no token.
-- **Attach bearer (Req 1.5)**: while a stored JWT exists and `expires_at` is in the future, the API client attaches `Authorization: Bearer <token>` to every Container_API request and every `POST /sync`.
-- **Expiry (Req 1.6, 2.3)**: if token absent or `expires_at <= now`, route to login and **retain** all queued Unsynced_Items in Local_Store. A **≤30s re-auth grace** may keep already-displayed personal data visible while re-auth completes (Req 17.3).
-- **401 on any API call (Req 1.7)**: clear the stored JWT and prompt re-login.
+- **Success (Req 1.2)**: persist an encrypted `{access_token, expires_at, role, location_id}`, structured-cloned non-extractable `CryptoKey`, and matching opaque lifecycle owner as one IndexedDB transaction, then publish only while the marker still carries that owner. This is browser-managed storage, not hardware-backed or OS-keystore storage; see the POPIA limitations below.
+- **Local coherence before acceptance**: login and restoration require a non-empty JWT `sub`, finite integer `iat`/`exp` with `exp > iat`, a future parseable `expires_at`, role/location agreement, and less than 1000ms difference between JWT `exp` and `expires_at`. The client deliberately does not verify the JWT signature; only the server can establish current validity.
+- **401 on login (Req 1.3)**: login is a public request with no bearer or global revocation callback. A `401` shows generic "invalid credentials" and stores no new token.
+- **Attach bearer (Req 1.5)**: each protected Container_API request and `POST /sync` captures one immutable `{token, lifecycle_generation}` snapshot and attaches that token while it is unexpired.
+- **Expiry (Req 1.6, 2.3)**: a capped/rescheduling timer plus `visibilitychange`, `pageshow`, and focus checks revoke at `expires_at`, route to login, clear the key, and retain all queued Unsynced_Items and scoped cached records. Production does not keep expired personal data mounted during the optional grace period.
+- **401 on protected API calls (Req 1.7)**: the API client centrally reports the request-start token/generation. Auth revokes only when both still match the current lifecycle, so a late account-A response cannot revoke account B. React auth state and legacy authenticated CacheStorage are cleared for an accepted revocation even if a screen catches the thrown error.
+- **Logout and restoration races**: every revoke synchronously increments the lifecycle generation and clears the in-memory key/session, then compare-removes only its active marker inside the same durable-auth lock used by replacement. Login publishes its new marker before atomically replacing the owner-tagged metadata tuple; restoration requires marker/owner equality and compares its generation immediately before local publication. Same-origin restore/replacement/cleanup critical sections share a Web Lock where available, with same-context promise serialization as the fallback. Same-origin contexts observe marker removal through `storage`; foreground checks cover missed events.
+- **Interrupted and delayed cleanup**: auth deletion reads `session_owner` and deletes `session`, `session_key`, and `session_owner` only in the same readwrite transaction and only for the expected owner. Thus cleanup for M is a no-op after N is installed, even if it was queued earlier. An absent-marker startup reads the tuple, rechecks marker absence, and conditionally removes the observed owner or legacy ownerless entries. Failed/stale login cleanup targets only that attempt's owner. Auth cleanup never touches `crypto_salt`, sync queues, account-scoped cached reads, or local records.
 - **HTTPS only (Req 17.4)**: the API client rejects non-HTTPS base URLs.
 - **Role gating (Req 2)**: the decoded `role` claim drives navigation (see below).
 
@@ -378,11 +387,11 @@ Each capture service is a pure function `buildActions(input, context) → { reco
 ## POPIA on-device protection (Req 17)
 
 - **Encryption at rest (Req 17.1)**: personal-data payloads (player name, guardian phone, consents, and any capture carrying personal data) are encrypted with **WebCrypto AES-GCM (256-bit)** before being written to IndexedDB. A per-record random 96-bit IV is stored alongside the ciphertext.
-- **Key management**: the AES key is derived via **PBKDF2** (WebCrypto) from a login-time secret combined with the stored `crypto_salt`, held only as a non-extractable `CryptoKey` in memory for the authenticated session. It is not persisted in extractable form.
-- **Withhold display until authenticated (Req 17.2)**: with no in-memory key/valid session, encrypted personal data cannot be decrypted or displayed; the UI shows the login screen.
-- **Re-auth on expiry (Req 17.3)**: at `expires_at`, personal data display requires re-authentication, with a ≤30s grace for already-rendered data.
+- **Key management**: the AES key is derived via **PBKDF2** (WebCrypto) from a login-time secret and stored `crypto_salt`. During an active session the browser persistently structured-clones the non-extractable `CryptoKey` into origin-scoped IndexedDB beside the encrypted JWT so an installed Android PWA can restore after process recreation. Non-extractable means key bytes cannot be exported; it does **not** prevent same-origin code holding the key object from using it to decrypt.
+- **Restoration and revocation (Req 17.2)**: startup renders no routes while restoration requires the active marker to equal the atomically persisted `session_owner`, then checks key shape, encrypted session, required JWT claims, duplicated role/location, and coherent future expiry. These checks establish only local coherence of a previously issued session, not JWT signature authenticity, server revocation status, or current authorization. Protected requests remain server-authoritative. Explicit logout, expiry, and a current-lifecycle `401` revoke centrally: in-memory clearing happens synchronously, while marker compare-removal and durable cleanup share a same-origin Web Lock where supported. The deleting IndexedDB transaction rechecks the expected owner, so old cleanup cannot erase a replacement; absent-marker startup retries stale owned or legacy ownerless cleanup. Cross-context marker observers invalidate memory only. Queued work and scoped cached/local records are preserved.
+- **Re-auth on expiry (Req 17.3)**: the provider revokes and unmounts authenticated/personal-data UI immediately at `expires_at`, including after Android wake/resume. Although the requirement permits a ≤30s grace for already-rendered data, this implementation deliberately does not retain that grace.
 - **HTTPS only (Req 17.4)** and **minimal fields (Req 17.5)**: no national ID numbers or residential addresses are ever collected or stored.
-- **Honest limitations**: a browser has no hardware-backed keystore for a web origin; a determined attacker with the unlocked device and the running session key can read data. AES-GCM at rest protects data at rest against casual inspection of IndexedDB and against access when no session key is in memory, but is **not** equivalent to OS-level secure enclave protection. This trade-off is documented so it is not mistaken for stronger guarantees.
+- **Honest limitations**: browser origin storage is not a hardware-backed keystore or secure enclave. The local marker, persisted owner, and Web Lock are fail-closed coordination signals, not tamper-proof storage or security boundaries. Same-origin code or an attacker controlling an unlocked active origin can use the persisted non-extractable key for decryption even though it cannot export the key bytes. AES-GCM reduces casual plaintext exposure in IndexedDB, but it does not provide absolute signed-out protection against origin compromise or an attacker who can rewrite same-origin storage. This is a documented browser-platform trade-off, not a claim of hardware-backed protection.
 
 ## Data Models
 
@@ -488,6 +497,9 @@ interface Meta {
   device_id: string;
   last_successful_sync: string | null;
   crypto_salt: string;
+  session?: EncryptedField;
+  session_key?: CryptoKey; // persistent structured clone; still non-extractable
+  session_owner?: string; // opaque lifecycle UUID; must equal active marker
 }
 
 // ---- Encrypted-at-rest envelope for personal data (Req 17.1) ----
@@ -655,8 +667,8 @@ The following properties are derived from the prework analysis and target the pu
 |---|---|---|
 | Empty login fields | Client validation blocks submit; field-level message | 1.4 |
 | `401` on login | Generic "invalid credentials"; no token stored | 1.3 |
-| `401` on any API/sync call | Clear stored JWT; route to login; retain queue | 1.6, 1.7 |
-| Token expired (`expires_at ≤ now`) | Route to login; retain queue; ≤30s grace for shown data | 1.6, 17.3 |
+| `401` on a protected API/sync call | Centrally revoke only if request token/generation still matches; clear React auth and legacy auth caches; retain queue/scoped records | 1.6, 1.7 |
+| Token expired (`expires_at ≤ now`) | Timer/resume check immediately revokes, unmounts personal data, and routes to login; retain queue/scoped records | 1.6, 17.3 |
 | Network error on `POST /sync` | Retain all affected actions; increment attempt; retry later (backoff) | 5.5 |
 | Non-200 / malformed sync response | Treat as transport failure → retain queue; log | 5.5 |
 | Action `rejected` by server | Retain record; store `reason`; surface in UI; exclude from future batches | 5.6, 6.5 |
