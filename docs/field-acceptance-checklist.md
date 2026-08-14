@@ -9,13 +9,43 @@ Run this rehearsal with **only** the retained synthetic player
 `API Verification Canary v1`. Never enter a real learner's name or details
 until every required result below is **PASS**.
 
+## Founder: start here
+
+Do these stages in order. Stop at the first unexpected result and tell Kiro what
+stage failed; do not try to repair or repeat production data.
+
+1. **Get one green link from Kiro.** Kiro records the current Release and a
+   successful **Prepare Phase 1 Field Acceptance** run. You do not run SQL or
+   interpret database tables or policies.
+2. **Check three private items.** In Supabase, Security Advisor must show
+   **0 errors and 0 warnings**. Confirm that no database role, grant, ownership,
+   function, policy, or migration changed after Kiro's green preflight; if you
+   are unsure, stop and ask Kiro to rerun it. In the password manager, confirm
+   that separate founder and Loyiso entries are available. Share neither
+   password.
+3. **Install and swap accounts.** On the lounge device, install the app, open it
+   from its icon, match the Release supplied by Kiro, then sign in and out in
+   this order: Loyiso → founder → Loyiso. Stop if an old account's screen or menu
+   remains visible.
+4. **Run five safe offline cards.** Use only `API Verification Canary v1`, Cash
+   **R0**, and the five rows in Section 3. The waiting number must read exactly
+   **2, 4, 6, 8, 10**. Never use Entitlement draw.
+5. **Close, reopen and reconnect.** While still offline, fully close and reopen
+   the installed app; the waiting number must remain **10**. Reconnect once,
+   wait for **0**, and use Retry sync no more than once.
+6. **Check the result and the operator.** Canary history must increase by
+   exactly five and stay unchanged after another relaunch. The operator then
+   demonstrates the six actions in Section 5 without help or paper.
+7. **Decide.** Record GO only if every section passed. Anything else is NO-GO;
+   real learner data and Phase 2 remain paused.
+
 ## How to run this gate
 
 This checklist is deliberately operator-friendly. The operator uses only the
 normal app and device controls; no developer tools are required.
 
-1. Kiro or the release operator completes the automated release evidence in
-   Section 1.
+1. Kiro or the release operator completes the automated release evidence and
+   the read-only database preflight in Section 1.
 2. The lounge operator completes Sections 2–5 on the actual device, one step at
    a time, and reports **PASS** or **FAIL** plus a short non-sensitive note.
 3. Kiro records the results in a pull request without credentials, tokens,
@@ -39,7 +69,7 @@ API production deployment link or ID:
 Verify Live API Role Access run link or ID:
 Verify Live PWA Browser first run link or ID:
 Verify Live PWA Browser replay run link or ID:
-14-table and policy catalogue evidence reference/date:
+Prepare Phase 1 Field Acceptance run link or ID/date:
 Security Advisor evidence reference/date:
 Last database migration, role, grant, or policy change date:
 Stable PWA origin: https://funhouse-revenue-pwa.vercel.app
@@ -74,16 +104,17 @@ Kiro or the release operator completes these before the physical rehearsal.
       `skipped` and proved replay of the workflow's stable action identities.
       The physical operator must not manufacture a duplicate replay.
 - [ ] The stable PWA and API origins above are unchanged and use HTTPS.
-- [ ] The recorded catalogue evidence confirms all 14 tables have RLS enabled,
-      not forced, and no table is owned by `funhouse_runtime`.
-- [ ] The same evidence confirms the 24 reviewed policies target only
-      `funhouse_runtime`, and the consent trigger function has the fixed empty
-      search path.
+- [ ] **Prepare Phase 1 Field Acceptance** passed for the recorded SHA. Its
+      summary confirms 14/14 expected tables, 24/24 exact runtime-only policies,
+      the fixed empty consent-function search path, and runtime least privilege.
+- [ ] The preflight and recorded Supabase Security Advisor observation are no
+      more than seven days old. Rerun both after any migration or out-of-band
+      role, membership, grant, ownership, function, or policy change regardless
+      of age.
 - [ ] The recorded Supabase Security Advisor evidence reports zero errors and
       zero warnings.
-- [ ] Catalogue/policy and Security Advisor observations are no more than seven
-      days old. Rerun both after any migration or out-of-band role, membership,
-      grant, ownership, function, or policy change regardless of age.
+- [ ] The founder confirms no relevant database change occurred after the
+      preflight and Advisor observation.
 - [ ] The operator has the approved `Loyiso` and second seeded-role
       password-manager entries. Neither value has been copied into this record,
       chat, a screenshot, or a workflow input.

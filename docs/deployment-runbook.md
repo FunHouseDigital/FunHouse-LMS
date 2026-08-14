@@ -18,7 +18,9 @@ merged.
 Deployment success is not release acceptance. For every candidate release,
 **Verify Live API Role Access** must pass against the exact current SHA, then
 **Verify Live PWA Browser** must pass twice for that same SHA (the second stable-
-identity run proves replay safety), and the
+identity run proves replay safety). **Prepare Phase 1 Field Acceptance** must
+then pass its read-only 14-table, 24-policy, function-search-path, and least-
+privilege checks. Finally, the
 [Phase 1 field-acceptance rehearsal](field-acceptance-checklist.md) must be
 recorded on the actual lounge device before real learner data is used. Record
 the operator-approved stable PWA origin rather than inferring it from a
@@ -443,10 +445,14 @@ Role creation and passwords are intentionally not committed to migrations.
 
 For the current live Supabase project, the automated migration-010
 initialisation and dedicated runtime-role verification completed before the
-client-identity API revision merged. Those workflow results do not prove the
-current API release's authenticated role behaviour, the manual SQL catalogue
-checks, Security Advisor clearance, browser acceptance, or field acceptance.
-Those remain explicit release gates.
+client-identity API revision merged. **Prepare Phase 1 Field Acceptance** now
+performs read-only catalogue checks for the exact 14-table RLS/ownership
+contract, all 24 reviewed runtime-only policies and expressions, the consent
+function's fixed empty search path, and effective runtime least privilege. It
+does not prove the current API release's authenticated role behaviour, Security
+Advisor clearance, absence of a later out-of-band database change, browser
+acceptance, physical-device behaviour, operator usability, or final GO. Those
+remain separate release gates.
 
 For a new Supabase project, a replacement runtime role, or policy recovery:
 
@@ -459,18 +465,20 @@ For a new Supabase project, a replacement runtime role, or policy recovery:
 3. Run **Initialize Live Supabase Database** from `main` using the owner or
    migrator identity. The migration chain atomically installs the runtime grants
    and policies before committing.
-4. Run **Verify Live Supabase Runtime Role** from `main`. It must confirm the
-   exact effective grants, policies, role attributes, and ownership separation
-   through the same session pooler Vercel will use.
+4. Run **Prepare Phase 1 Field Acceptance** from `main`. It must confirm the
+   exact effective grants, policies, role attributes, ownership separation,
+   14/14 table contract, 24/24 exact policies, and fixed empty consent-function
+   search path through the same session pooler Vercel will use.
 5. In Vercel, set `DB_USER` to the verified custom-role pooler username and
    `DB_PASSWORD` to its distinct password, then redeploy. Do not change the
    owner/migrator workflow secrets.
 6. Confirm an authenticated FastAPI login and representative founder, manager,
    and facilitator DB-backed read/write operations. `/health` alone is
    insufficient because it does not query PostgreSQL.
-7. In the Supabase SQL editor, verify all 14 rows below show
-   `rls_enabled = true`, `rls_forced = false`, and an owner other than
-   `funhouse_runtime`:
+7. For normal field acceptance, record the successful workflow run link and
+   observation date; the founder does not need to run or interpret SQL. If the
+   workflow fails, a database operator may use this expert troubleshooting
+   query to inspect the 14-table RLS and ownership contract:
 
    ```sql
    WITH expected(name) AS (
@@ -491,8 +499,8 @@ For a new Supabase project, a replacement runtime role, or policy recovery:
    ORDER BY e.name;
    ```
 
-8. Confirm the only policies on those tables target `funhouse_runtime`, then
-   verify the trigger function has a fixed empty path:
+8. For expert policy/function troubleshooting only, inspect the policy targets
+   and fixed empty function path:
 
    ```sql
    SELECT tablename, policyname, cmd, roles
@@ -530,8 +538,8 @@ For a new Supabase project, a replacement runtime role, or policy recovery:
   Verify login plus a representative write before changing database policies.
 - **Policy-loss recovery:** run **Initialize Live Supabase Database** with the
   protected owner/migrator identity; its migration step forces runtime-role
-  activation and atomically rebuilds the 24 policies. Then rerun **Verify Live
-  Supabase Runtime Role** before attempting the Vercel runtime cutover again.
+  activation and atomically rebuilds the 24 policies. Then rerun **Prepare
+  Phase 1 Field Acceptance** before attempting the Vercel runtime cutover again.
 - Keep the old owner credential valid and migration-only through a soak period.
   Remove it from Vercel only after founder, manager, and facilitator flows pass;
   rotate or retire credentials last, never as the first rollback action.

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from funhouse_pipeline.config import load_config
@@ -52,6 +53,31 @@ _POLICY_COMMANDS = {
     "UPDATE": ("funhouse_runtime_update", "w", "true", "true"),
 }
 
+EXPECTED_TABLE_COUNT = 14
+EXPECTED_POLICY_COUNT = 24
+_CONFIGURED_TABLE_COUNT = len(EXPECTED_PRIVILEGES)
+_CONFIGURED_POLICY_COUNT = sum(
+    len(privileges.intersection(_POLICY_COMMANDS))
+    for privileges in EXPECTED_PRIVILEGES.values()
+)
+if (_CONFIGURED_TABLE_COUNT, _CONFIGURED_POLICY_COUNT) != (
+    EXPECTED_TABLE_COUNT,
+    EXPECTED_POLICY_COUNT,
+):
+    raise RuntimeError(
+        "runtime access matrix changed; review the Phase 1 evidence contract"
+    )
+_EXPECTED_FUNCTION_SEARCH_PATH = 'search_path=""'
+
+
+@dataclass(frozen=True)
+class RuntimeRoleVerificationResult:
+    """Non-sensitive aggregate evidence from the read-only catalogue checks."""
+
+    table_count: int
+    policy_count: int
+    function_search_path_fixed: bool
+
 
 class RuntimeRoleVerificationError(RuntimeError):
     """Raised when the prospective runtime identity violates its contract."""
@@ -61,8 +87,10 @@ class RuntimeRoleVerificationError(RuntimeError):
         super().__init__("; ".join(self.failures))
 
 
-def _verify(conn: Any) -> tuple[str, str]:
+def _verify(conn: Any) -> RuntimeRoleVerificationResult:
     failures: list[str] = []
+    actual_policy_count = 0
+    function_search_path_fixed = False
 
     with conn.cursor() as cursor:
         cursor.execute("SELECT current_user, current_schema(), current_database()")
@@ -227,6 +255,7 @@ def _verify(conn: Any) -> tuple[str, str]:
                 (name, command, tuple(roles), using_expression, check_expression)
                 for name, command, roles, using_expression, check_expression in cursor.fetchall()
             }
+            actual_policy_count += len(actual_policies)
             expected_policies = {
                 (
                     _POLICY_COMMANDS[privilege][0],
@@ -240,6 +269,12 @@ def _verify(conn: Any) -> tuple[str, str]:
             }
             if actual_policies != expected_policies:
                 failures.append(f"{table_name}: runtime RLS policy set is not exact")
+
+        if actual_policy_count != EXPECTED_POLICY_COUNT:
+            failures.append(
+                f"runtime policy total is {actual_policy_count}, "
+                f"expected {EXPECTED_POLICY_COUNT}"
+            )
 
         if runtime_oid is not None and target_schema is not None:
             cursor.execute(
@@ -312,7 +347,7 @@ def _verify(conn: Any) -> tuple[str, str]:
 
             cursor.execute(
                 """
-                SELECT p.oid
+                SELECT p.oid, p.proconfig
                 FROM pg_proc AS p
                 JOIN pg_namespace AS n ON n.oid = p.pronamespace
                 WHERE n.nspname = %s
@@ -321,13 +356,31 @@ def _verify(conn: Any) -> tuple[str, str]:
                 """,
                 (target_schema,),
             )
-            function_row = cursor.fetchone()
-            if function_row is None:
+            function_rows = cursor.fetchall()
+            if not function_rows:
                 failures.append("consent mutation trigger function is missing")
+            elif len(function_rows) != 1:
+                failures.append(
+                    "consent mutation trigger function catalogue match is ambiguous"
+                )
             else:
+                function_oid, function_config = function_rows[0]
+                search_path_settings = [
+                    str(setting)
+                    for setting in (function_config or ())
+                    if str(setting).startswith("search_path=")
+                ]
+                function_search_path_fixed = search_path_settings == [
+                    _EXPECTED_FUNCTION_SEARCH_PATH
+                ]
+                if not function_search_path_fixed:
+                    failures.append(
+                        "consent mutation trigger function does not fix an empty search path"
+                    )
+
                 cursor.execute(
                     "SELECT has_function_privilege(%s, %s, 'EXECUTE')",
-                    (runtime_oid, function_row[0]),
+                    (runtime_oid, function_oid),
                 )
                 if cursor.fetchone()[0]:
                     failures.append(
@@ -336,26 +389,30 @@ def _verify(conn: Any) -> tuple[str, str]:
 
     if failures:
         raise RuntimeRoleVerificationError(failures)
-    return target_schema, database_name
+
+    return RuntimeRoleVerificationResult(
+        table_count=len(table_rows),
+        policy_count=actual_policy_count,
+        function_search_path_fixed=function_search_path_fixed,
+    )
 
 
 def verify(config_path: str | None = None) -> int:
     """Connect with ``DB_*`` and verify the runtime role contract."""
     config = load_config(config_path)
-    print(
-        f"Verifying runtime role at {config.database.host}:{config.database.port}"
-        f"/{config.database.dbname} (sslmode={config.database.sslmode})"
-    )
+    print("Running read-only Phase 1 database security preflight.")
 
     conn = connect(config)
     try:
-        schema_name, database_name = _verify(conn)
+        result = _verify(conn)
     finally:
         conn.close()
 
     print(
-        f"Runtime role {RUNTIME_ROLE!r} passed least-privilege checks on "
-        f"{database_name!r}.{schema_name!r}."
+        "Field-acceptance database preflight passed: "
+        f"{result.table_count}/{EXPECTED_TABLE_COUNT} tables, "
+        f"{result.policy_count}/{EXPECTED_POLICY_COUNT} exact policies, "
+        "fixed empty function search path, and runtime least privilege."
     )
     return 0
 
