@@ -100,12 +100,12 @@ export function AuthProvider({
     async (identifier: string, password: string): Promise<LoginOutcome> => {
       setSubmitting(true);
       try {
+        // Clear bearer-authorized response caches before a new token can be
+        // activated. If this mandatory account-isolation boundary fails, the
+        // login aborts while AuthManager is still unauthenticated.
+        await clearAuthenticatedResponseCaches();
         const outcome = await authManager.login(identifier, password);
         if (outcome.ok) {
-          // API responses in CacheStorage are bearer-authorized but keyed by
-          // URL. Clear the previous session's entries before rendering this
-          // account; offline data lives in account-scoped IndexedDB caches.
-          await clearAuthenticatedResponseCaches();
           setSession(outcome.session);
         }
         return outcome;
