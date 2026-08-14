@@ -52,6 +52,8 @@ export interface ApiClientConfig {
   getToken?: () => string | null | undefined;
   /** Injectable fetch implementation (defaults to the global `fetch`); used by tests. */
   fetchImpl?: typeof fetch;
+  /** Maximum login request duration before aborting (defaults to 15 seconds). */
+  loginTimeoutMs?: number;
 }
 
 /** Query parameters accepted by `GET /revenue/summary` (Dependency D3). */
@@ -85,6 +87,7 @@ export class ContainerApiClient {
   private readonly baseUrl: string;
   private readonly getToken: () => string | null | undefined;
   private readonly fetchImpl: typeof fetch;
+  private readonly loginTimeoutMs: number;
 
   constructor(config: ApiClientConfig) {
     if (!isAllowedBaseUrl(config.baseUrl)) {
@@ -97,9 +100,15 @@ export class ContainerApiClient {
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.getToken = config.getToken ?? (() => undefined);
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.loginTimeoutMs = config.loginTimeoutMs ?? 15_000;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
 
     const token = this.getToken();
@@ -107,7 +116,7 @@ export class ContainerApiClient {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const init: RequestInit = { method, headers };
+    const init: RequestInit = { method, headers, signal };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
@@ -138,8 +147,19 @@ export class ContainerApiClient {
   // ---- Typed endpoint methods (Confirmed Container_API contract) ----
 
   /** `POST /auth/login` → `{access_token, token_type, expires_at}` (Req 1.1, 1.2). */
-  login(identifier: string, password: string): Promise<LoginResponse> {
-    return this.request<LoginResponse>('POST', '/auth/login', { identifier, password });
+  async login(identifier: string, password: string): Promise<LoginResponse> {
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.loginTimeoutMs);
+    try {
+      return await this.request<LoginResponse>(
+        'POST',
+        '/auth/login',
+        { identifier, password },
+        controller.signal,
+      );
+    } finally {
+      globalThis.clearTimeout(timeout);
+    }
   }
 
   /** `GET /players` → roster rows (Req 9). */

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -54,6 +54,10 @@ describe('Login screen (Req 1.1, 1.3, 1.4)', () => {
     clearSessionKey();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('blocks submit and shows field-level validation on empty input (Req 1.4)', async () => {
     const user = userEvent.setup();
     const loginFn = vi.fn(async () => successResponse('manager'));
@@ -94,6 +98,60 @@ describe('Login screen (Req 1.1, 1.3, 1.4)', () => {
 
     expect(await screen.findByTestId('form-error')).toHaveTextContent('Invalid credentials');
     expect(loginFn).toHaveBeenCalledWith('loyiso', 'wrong');
+  });
+
+  it('trims the identifier without changing the password', async () => {
+    const user = userEvent.setup();
+    const loginFn = vi.fn(async () => {
+      throw new UnauthorizedError();
+    });
+    renderLogin(loginFn);
+
+    await user.type(screen.getByLabelText('Identifier'), '  Loyiso  ');
+    await user.type(screen.getByLabelText('Password'), ' secret ');
+    await user.click(screen.getByRole('button', { name: /log in/i }));
+
+    await screen.findByTestId('form-error');
+    expect(loginFn).toHaveBeenCalledWith('Loyiso', ' secret ');
+  });
+
+  it('shows an actionable error and re-enables submit after an unexpected failure', async () => {
+    const user = userEvent.setup();
+    const loginFn = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    renderLogin(loginFn);
+
+    await user.type(screen.getByLabelText('Identifier'), 'Loyiso');
+    await user.type(screen.getByLabelText('Password'), 'secret');
+    await user.click(screen.getByRole('button', { name: /log in/i }));
+
+    expect(await screen.findByTestId('form-error')).toHaveTextContent(
+      'Unable to sign in. Check your connection and try again.',
+    );
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled();
+  });
+
+  it('does not activate a session when mandatory cache isolation fails', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('caches', {
+      delete: vi.fn(async () => {
+        throw new Error('CacheStorage unavailable');
+      }),
+    });
+    const loginFn = vi.fn(async () => successResponse('manager'));
+    const authManager = renderLogin(loginFn);
+
+    await user.type(screen.getByLabelText('Identifier'), 'Loyiso');
+    await user.type(screen.getByLabelText('Password'), 'secret');
+    await user.click(screen.getByRole('button', { name: /log in/i }));
+
+    expect(await screen.findByTestId('form-error')).toHaveTextContent(
+      'Unable to sign in. Check your connection and try again.',
+    );
+    expect(loginFn).not.toHaveBeenCalled();
+    expect(authManager.getToken()).toBeNull();
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 
   it('routes to the role home on a successful login (Req 1.2, 2.1)', async () => {

@@ -14,8 +14,11 @@ Validation and error mapping (design § Error Handling):
 
 Identifier lookup: the Phase 0 ``users`` table has no ``phone`` column, so the
 ``identifier`` is matched against the columns that do exist — ``name`` (the
-natural identity used by the seed) and ``email``. Passwords are verified against
-``users.password_hash`` via the Auth_Service.
+natural identity used by the seed) and ``email``. Surrounding identifier
+whitespace is ignored. An exact match is preferred; otherwise a unique
+case-insensitive match is accepted. Ambiguous matches fail closed. Passwords
+are never normalised and are verified against ``users.password_hash`` via the
+Auth_Service.
 """
 
 from __future__ import annotations
@@ -51,31 +54,53 @@ class LoginResponse(BaseModel):
 
 
 def _lookup_user(conn: Any, identifier: str) -> tuple[AuthUser, str | None] | None:
-    """Return ``(user, password_hash)`` for a matching row, or ``None``.
+    """Return ``(user, password_hash)`` for one unambiguous matching row.
 
-    Matches ``identifier`` against ``users.name`` or ``users.email``. The
-    facilitator's assigned school is sourced from ``users.school_id`` (added by
-    migration ``004_users_school_id.sql``) and carried onto the issued identity
-    so ``issue_token`` populates the ``school_id`` claim (Req 1.8, 3.3). For a
-    facilitator this is their school; for founders/managers the column is
-    ``NULL`` and the claim stays null.
+    Surrounding identifier whitespace is ignored. An exact name/email match is
+    preferred; if none exists, one case-insensitive match is accepted. More
+    than one match fails closed rather than selecting an account arbitrarily.
+    The facilitator's assigned school is sourced from ``users.school_id``
+    (added by migration ``004_users_school_id.sql``) and carried onto the
+    issued identity so ``issue_token`` populates the ``school_id`` claim (Req
+    1.8, 3.3). For a facilitator this is their school; for founders/managers
+    the column is ``NULL`` and the claim stays null.
     """
-    with conn.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT id, role, location_id, school_id, password_hash
-            FROM users
-            WHERE name = %s OR email = %s
-            LIMIT 1
-            """,
-            (identifier, identifier),
-        )
-        row = cursor.fetchone()
-
-    if row is None:
+    normalised_identifier = identifier.strip()
+    if not normalised_identifier:
         return None
 
-    user_id, role, location_id, school_id, password_hash = row
+    columns = "id, role, location_id, school_id, password_hash"
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT {columns}
+            FROM users
+            WHERE name = %s OR email = %s
+            LIMIT 2
+            """,
+            (normalised_identifier, normalised_identifier),
+        )
+        rows = cursor.fetchall()
+
+        if len(rows) > 1:
+            return None
+
+        if not rows:
+            cursor.execute(
+                f"""
+                SELECT {columns}
+                FROM users
+                WHERE LOWER(name) = LOWER(%s) OR LOWER(email) = LOWER(%s)
+                LIMIT 2
+                """,
+                (normalised_identifier, normalised_identifier),
+            )
+            rows = cursor.fetchall()
+
+    if len(rows) != 1:
+        return None
+
+    user_id, role, location_id, school_id, password_hash = rows[0]
     user = AuthUser(
         id=str(user_id),
         role=role,

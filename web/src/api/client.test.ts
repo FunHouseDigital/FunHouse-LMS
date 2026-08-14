@@ -89,6 +89,34 @@ describe('ContainerApiClient bearer attachment (Req 1.5)', () => {
   });
 });
 
+describe('ContainerApiClient login timeout', () => {
+  it('aborts a login request that exceeds the configured deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted', 'AbortError'));
+          });
+        }),
+      );
+      const client = new ContainerApiClient({
+        baseUrl: 'https://api.funhouse.example',
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        loginTimeoutMs: 25,
+      });
+
+      const rejection = expect(client.login('Loyiso', 'secret')).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+      await vi.advanceTimersByTimeAsync(25);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('ContainerApiClient 401 surfacing (Req 1.7)', () => {
   it('throws UnauthorizedError distinctly on a 401 response', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(401, { detail: 'invalid' }));

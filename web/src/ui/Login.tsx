@@ -23,21 +23,28 @@ export function Login() {
     setFormError(null);
 
     // Client-side non-empty validation blocks submission (Req 1.4).
-    const errors = validateCredentials(identifier, password);
+    const normalisedIdentifier = identifier.trim();
+    const errors = validateCredentials(normalisedIdentifier, password);
     if (errors.identifier || errors.password) {
       setFieldErrors(errors);
       return;
     }
     setFieldErrors({});
 
-    const outcome = await login(identifier, password);
-    if (!outcome.ok) {
-      if (outcome.kind === 'validation') {
-        setFieldErrors(outcome.fieldErrors ?? {});
-      } else {
-        // Generic message for a 401 — no user enumeration (Req 1.3).
-        setFormError('Invalid credentials');
+    try {
+      const outcome = await login(normalisedIdentifier, password);
+      if (!outcome.ok) {
+        if (outcome.kind === 'validation') {
+          setFieldErrors(outcome.fieldErrors ?? {});
+        } else {
+          // Generic message for a 401 — no user enumeration (Req 1.3).
+          setFormError('Invalid credentials');
+        }
       }
+    } catch {
+      // Network, API, storage, and crypto failures must never look like a
+      // successful no-op. Keep details out of the UI but give a useful retry.
+      setFormError('Unable to sign in. Check your connection and try again.');
     }
   }
 
