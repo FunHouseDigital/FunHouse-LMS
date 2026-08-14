@@ -1,13 +1,14 @@
-name: Verify Live Supabase Runtime Role
+name: Prepare Phase 1 Field Acceptance
+run-name: Prepare Phase 1 Field Acceptance · ${{ github.sha }}
 
-# Read-only pre-cutover gate for the dedicated FastAPI PostgreSQL login.
+# Read-only production preflight for the founder's Phase 1 security evidence.
 # Role/password provisioning remains an out-of-band production operation.
 
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Confirm the live runtime-role verification"
+        description: "Prepare the read-only Phase 1 database evidence"
         type: choice
         required: true
         options:
@@ -22,7 +23,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify runtime identity and effective privileges
+    name: Prepare read-only database security evidence
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -41,10 +42,10 @@ jobs:
           fi
 
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
           cache: pip
@@ -115,7 +116,18 @@ jobs:
           print("Runtime connection identifiers validated; no values were logged.")
           PY
 
-      - name: Verify runtime role contract
+      - name: Recheck current main immediately before the preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$GITHUB_SHA" != "$current_main_sha" ]; then
+            echo "::error::Main advanced while the preflight was prepared. Dispatch a fresh run."
+            exit 1
+          fi
+
+      - name: Verify field-acceptance database contract
         env:
           DB_PORT: ${{ vars.SUPABASE_DB_PORT || '5432' }}
           DB_NAME: ${{ vars.SUPABASE_DB_NAME || 'postgres' }}
@@ -128,11 +140,17 @@ jobs:
 
       - name: Publish non-secret summary
         run: |
+          observed_at="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
           {
-            echo "## Supabase runtime role verified"
+            echo "## Phase 1 database security preflight passed"
             echo ""
-            echo "- Connected through the production session pooler as \`funhouse_runtime\`"
-            echo "- Elevated attributes and role memberships are absent"
-            echo "- Runtime grants and RLS policies exactly match the FastAPI access matrix"
-            echo "- Permanent schema/database DDL, DELETE, TRUNCATE, and direct trigger-function execution remain denied"
+            echo "- Candidate Release \`${GITHUB_SHA:0:7}\` was still current main immediately before the read-only query"
+            echo "- Observation time: ${observed_at}"
+            echo "- 14/14 expected tables: RLS enabled, not forced, and not runtime-owned — PASS"
+            echo "- 24/24 exact runtime-only policies, including expressions and commands — PASS"
+            echo "- Consent mutation function has a fixed empty search path and denies direct runtime execution — PASS"
+            echo "- Runtime attributes, memberships, effective grants, sequences, schema, and database least privilege — PASS"
+            echo ""
+            echo "This does not prove Security Advisor clearance, absence of a later out-of-band database change, password-manager availability, physical-device behaviour, operator usability, or final GO."
+            echo "No migrations, seeds, password changes, API writes, or PWA writes were performed. No application rows or record identifiers were read or published. Protected credentials and connection identifiers were used only to establish the database session; their values were masked and were not logged or published."
           } >> "$GITHUB_STEP_SUMMARY"
