@@ -171,6 +171,7 @@ jobs:
             echo ""
             echo "- Workflow SHA matched successful API and PWA Vercel Production deployments"
             echo "- Visible Release ${GITHUB_SHA:0:7} matched the workflow SHA before and after login"
+            echo "- A newly created browser page restored the protected session from origin storage without another login"
             echo "- Same-SHA API role verification passed after the API Production deployment"
             echo "- HTTPS deep link, manifest metadata, and activated service worker passed"
             echo "- Manager login and exact synthetic-player lookup passed"

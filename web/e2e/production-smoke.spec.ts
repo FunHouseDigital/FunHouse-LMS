@@ -293,6 +293,21 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   await expect(page.getByRole('heading', { name: 'Log Session' })).toBeVisible();
   await expect(releaseIdentifier).toHaveText(`Release ${expectedRelease}`);
 
+  // Recreate the browser page without clearing origin storage. The new page
+  // starts with no in-memory AuthManager state, so reaching the protected route
+  // proves the persisted non-extractable key/session restoration path works.
+  const recreatedPage = await context.newPage();
+  const recreatedResponse = await recreatedPage.goto(`${PWA_ORIGIN}/`, {
+    waitUntil: 'domcontentloaded',
+  });
+  expect(recreatedResponse?.status(), 'PWA recreation root did not load').toBe(200);
+  await expect(recreatedPage).toHaveURL(`${PWA_ORIGIN}/log-session`);
+  await expect(recreatedPage.getByRole('heading', { name: 'Log Session' })).toBeVisible();
+  await expect(
+    recreatedPage.getByRole('contentinfo', { name: 'Application release' }),
+  ).toHaveText(`Release ${expectedRelease}`);
+  await recreatedPage.close();
+
   await page.getByRole('link', { name: 'Players' }).click();
   const playerSearch = page.getByLabel('Search players by name');
   await expect(playerSearch).toBeVisible();
