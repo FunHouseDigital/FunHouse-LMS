@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../state/authState';
 import { AppShell } from '../App';
 import { Login } from './Login';
-import { AuthManager } from '../domain/authManager';
+import { AuthManager, SecureStorageUnavailableError } from '../domain/authManager';
 import { UnauthorizedError } from '../api/client';
 import { clearSessionKey } from '../domain/crypto';
 import { DB_NAME, closeDb } from '../store/localStore';
@@ -132,11 +132,11 @@ describe('Login screen (Req 1.1, 1.3, 1.4)', () => {
     expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 
-  it('does not activate a session when mandatory cache isolation fails', async () => {
+  it('continues login when legacy CacheStorage cleanup is unavailable', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('caches', {
       delete: vi.fn(async () => {
-        throw new Error('CacheStorage unavailable');
+        throw new DOMException('Storage access denied', 'SecurityError');
       }),
     });
     const loginFn = vi.fn(async () => successResponse('manager'));
@@ -146,11 +146,27 @@ describe('Login screen (Req 1.1, 1.3, 1.4)', () => {
     await user.type(screen.getByLabelText('Password'), 'secret');
     await user.click(screen.getByRole('button', { name: /log in/i }));
 
+    await waitFor(() => {
+      expect(loginFn).toHaveBeenCalledWith('Loyiso', 'secret');
+      expect(authManager.getToken()).not.toBeNull();
+    });
+    expect(screen.queryByTestId('form-error')).not.toBeInTheDocument();
+  });
+
+  it('gives specific guidance when secure browser storage is unavailable', async () => {
+    const user = userEvent.setup();
+    const loginFn = vi.fn(async () => {
+      throw new SecureStorageUnavailableError();
+    });
+    renderLogin(loginFn);
+
+    await user.type(screen.getByLabelText('Identifier'), 'Loyiso');
+    await user.type(screen.getByLabelText('Password'), 'secret');
+    await user.click(screen.getByRole('button', { name: /log in/i }));
+
     expect(await screen.findByTestId('form-error')).toHaveTextContent(
-      'Unable to sign in. Check your connection and try again.',
+      'Secure storage is unavailable. Turn off private browsing or use a standard browser window.',
     );
-    expect(loginFn).not.toHaveBeenCalled();
-    expect(authManager.getToken()).toBeNull();
     expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 

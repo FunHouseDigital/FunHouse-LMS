@@ -126,9 +126,9 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
     }
 
     setStatus('loading');
-    // Force authenticated reads to reach the active bearer session. Durable
-    // offline copies are account-scoped in IndexedDB, not shared CacheStorage.
-    await clearAuthenticatedResponseCaches();
+    // Protected reads are not stored in CacheStorage. Legacy cleanup is
+    // opportunistic and must not delay account-scoped IndexedDB hydration.
+    void clearAuthenticatedResponseCaches();
     const [playersResult, productsResult] = await Promise.allSettled([
       client.getPlayers(),
       productsRequired ? client.getProducts() : Promise.resolve([]),

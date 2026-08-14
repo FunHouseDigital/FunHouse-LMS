@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AuthManager,
+  SecureStorageUnavailableError,
   decodeRoleFromJwt,
   validateCredentials,
   SESSION_META_KEY,
@@ -88,6 +89,7 @@ describe('AuthManager', () => {
 
   afterEach(() => {
     clearSessionKey();
+    vi.unstubAllGlobals();
   });
 
   it('blocks submission and does not call the API on empty fields (Req 1.4)', async () => {
@@ -157,6 +159,34 @@ describe('AuthManager', () => {
     const am = new AuthManager({ loginFn, now: () => NOW });
 
     await expect(am.login('loyiso', 'secret')).rejects.toThrow('network down');
+  });
+
+  it('classifies secure-storage failure and clears a previous key and session', async () => {
+    const am = new AuthManager({
+      loginFn: async () => loginResponse('manager', NOW + 60_000),
+      now: () => NOW,
+    });
+    await am.login('loyiso', 'first-secret');
+    expect(am.getToken()).not.toBeNull();
+    expect(hasSessionKey()).toBe(true);
+
+    const actualCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', {
+      getRandomValues: actualCrypto.getRandomValues.bind(actualCrypto),
+      subtle: {
+        importKey: actualCrypto.subtle.importKey.bind(actualCrypto.subtle),
+        deriveKey: vi.fn(async () => {
+          throw new DOMException('Operation not supported', 'NotSupportedError');
+        }),
+      },
+    } as unknown as Crypto);
+
+    await expect(am.login('another-user', 'replacement-secret')).rejects.toBeInstanceOf(
+      SecureStorageUnavailableError,
+    );
+    expect(am.getSession()).toBeNull();
+    expect(am.getToken()).toBeNull();
+    expect(hasSessionKey()).toBe(false);
   });
 
   it('exposes the bearer token only while unexpired (Req 1.5, 1.6)', async () => {

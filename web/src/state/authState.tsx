@@ -20,7 +20,12 @@ import {
   type ReactNode,
 } from 'react';
 import type { Session } from '../domain/types';
-import { AuthManager, type LoginOutcome, type Role } from '../domain/authManager';
+import {
+  AuthManager,
+  SecureStorageUnavailableError,
+  type LoginOutcome,
+  type Role,
+} from '../domain/authManager';
 import { ContainerApiClient } from '../api/client';
 import { clearAuthenticatedResponseCaches } from '../pwa/authenticatedCaches';
 
@@ -100,15 +105,21 @@ export function AuthProvider({
     async (identifier: string, password: string): Promise<LoginOutcome> => {
       setSubmitting(true);
       try {
-        // Clear bearer-authorized response caches before a new token can be
-        // activated. If this mandatory account-isolation boundary fails, the
-        // login aborts while AuthManager is still unauthenticated.
-        await clearAuthenticatedResponseCaches();
+        // Protected API responses are no longer runtime-cached. Remove any
+        // legacy caches opportunistically, but never make browser CacheStorage
+        // support a prerequisite for authentication.
+        void clearAuthenticatedResponseCaches();
         const outcome = await authManager.login(identifier, password);
         if (outcome.ok) {
           setSession(outcome.session);
         }
         return outcome;
+      } catch (error) {
+        if (error instanceof SecureStorageUnavailableError) {
+          authManager.handleUnauthorized();
+          setSession(null);
+        }
+        throw error;
       } finally {
         setSubmitting(false);
       }
@@ -119,7 +130,7 @@ export function AuthProvider({
   const logout = useCallback(() => {
     authManager.handleUnauthorized();
     setSession(null);
-    void clearAuthenticatedResponseCaches().catch(() => undefined);
+    void clearAuthenticatedResponseCaches();
   }, [authManager]);
 
   const value = useMemo<AuthContextValue>(() => {
