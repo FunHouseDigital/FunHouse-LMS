@@ -20,7 +20,7 @@ file.**
 Test date (Africa/Johannesburg):                        [operator to complete on rehearsal day]
 Production main SHA (full 40 characters):               184cec0b62bee5065065aa4ae8e5187251559b08
 Visible app release (first 7 SHA characters):           184cec0
-PWA production deployment link or ID:                   Live bundle at https://funhouse-revenue-pwa.vercel.app confirmed serving Release 184cec0 (founder to record Vercel deployment ID)
+PWA production deployment link or ID:                   Vercel funhouse-revenue-pwa Production deployment of commit 184cec0 (main) — status Ready, not skipped (confirmed 2026-08-14); live bundle serves Release 184cec0
 API production deployment link or ID:                   [founder to record Vercel deployment ID for 184cec0]
 Verify Live API Role Access run link or ID:             https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31834626354 (re-confirmed 31844851713)
 Verify Live PWA Browser first run link or ID:           https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31834662868 (mode: applied-or-skipped)
@@ -48,10 +48,11 @@ Automated release and read-only database evidence — completed by Kiro against
 
 - [x] The recorded SHA is the current `main` SHA. — `184cec0b62bee5065065aa4ae8e5187251559b08`.
 - [ ] Both Vercel Production deployments attached to that SHA completed
-      successfully; neither build was skipped. — **Founder to confirm both the
-      PWA and API deployments for `184cec0` in Vercel.** Kiro self-verified the
-      live PWA bundle is serving `Release 184cec0` and the live API `/health`
-      responds `{"status":"ok"}`.
+      successfully; neither build was skipped. — **PWA confirmed:** Vercel
+      `funhouse-revenue-pwa` Production deployment of commit `184cec0` (main)
+      is **Ready** (not skipped), 2026-08-14. **API deployment still to be
+      confirmed by the founder.** Kiro self-verified the live PWA bundle serves
+      `Release 184cec0` and the live API `/health` responds `{"status":"ok"}`.
 - [x] The app visibly shows **Release `184cec0`**, and those seven characters
       match the start of the recorded full SHA. — Confirmed in the live PWA
       bundle; operator re-confirms on-device before and after login in Section 2.
