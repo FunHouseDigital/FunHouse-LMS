@@ -9,7 +9,11 @@
  */
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../state/authState';
-import { validateCredentials, type FieldErrors } from '../domain/authManager';
+import {
+  SecureStorageUnavailableError,
+  validateCredentials,
+  type FieldErrors,
+} from '../domain/authManager';
 
 export function Login() {
   const { login, submitting } = useAuth();
@@ -41,10 +45,15 @@ export function Login() {
           setFormError('Invalid credentials');
         }
       }
-    } catch {
-      // Network, API, storage, and crypto failures must never look like a
-      // successful no-op. Keep details out of the UI but give a useful retry.
-      setFormError('Unable to sign in. Check your connection and try again.');
+    } catch (error) {
+      if (error instanceof SecureStorageUnavailableError) {
+        setFormError(
+          'Secure storage is unavailable. Turn off private browsing or use a standard browser window.',
+        );
+      } else {
+        // Network and API failures must never look like a successful no-op.
+        setFormError('Unable to sign in. Check your connection and try again.');
+      }
     }
   }
 

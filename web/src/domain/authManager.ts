@@ -72,6 +72,21 @@ export interface LoginFailure {
 
 export type LoginOutcome = LoginSuccess | LoginFailure;
 
+/**
+ * Raised after a valid API response when encrypted local session persistence
+ * cannot be completed. Callers can distinguish browser storage/crypto support
+ * from connectivity without exposing authentication details.
+ */
+export class SecureStorageUnavailableError extends Error {
+  readonly cause?: unknown;
+
+  constructor(cause?: unknown) {
+    super('Secure device storage is unavailable');
+    this.name = 'SecureStorageUnavailableError';
+    this.cause = cause;
+  }
+}
+
 export interface AuthManagerOptions {
   /** Performs `POST /auth/login`; injected so it can be mocked in tests. */
   loginFn: (identifier: string, password: string) => Promise<LoginResponse>;
@@ -237,31 +252,39 @@ export class AuthManager {
     }
     const location_id = decodeLocationFromJwt(response.access_token);
 
-    // Derive/hold the encryption key from the login secret + per-device salt.
-    let salt = await getMeta<string>(CRYPTO_SALT_META_KEY);
-    if (!salt) {
-      salt = generateSalt();
-      await setMeta(CRYPTO_SALT_META_KEY, salt);
+    try {
+      // Derive/hold the encryption key from the login secret + per-device salt.
+      let salt = await getMeta<string>(CRYPTO_SALT_META_KEY);
+      if (!salt) {
+        salt = generateSalt();
+        await setMeta(CRYPTO_SALT_META_KEY, salt);
+      }
+      await initSessionKey(password, salt);
+
+      const session: Session = {
+        access_token: response.access_token,
+        // `expires_at` arrives as an ISO string over JSON; normalise defensively.
+        expires_at: String(response.expires_at),
+        role,
+        location_id,
+      };
+
+      // Persist encrypted-at-rest (Req 1.2, 17.1) using the in-memory session key.
+      const key = getSessionKey();
+      if (key) {
+        const encrypted = await encryptPayload(key, session);
+        await setMeta(SESSION_META_KEY, encrypted);
+      }
+
+      this.session = session;
+      return { ok: true, session };
+    } catch (error) {
+      // Never leave either a previous session or a derived key active after
+      // incomplete persistence of replacement credentials.
+      this.session = null;
+      clearSessionKey();
+      throw new SecureStorageUnavailableError(error);
     }
-    await initSessionKey(password, salt);
-
-    const session: Session = {
-      access_token: response.access_token,
-      // `expires_at` arrives as an ISO string over JSON; normalise defensively.
-      expires_at: String(response.expires_at),
-      role,
-      location_id,
-    };
-
-    // Persist encrypted-at-rest (Req 1.2, 17.1) using the in-memory session key.
-    const key = getSessionKey();
-    if (key) {
-      const encrypted = await encryptPayload(key, session);
-      await setMeta(SESSION_META_KEY, encrypted);
-    }
-
-    this.session = session;
-    return { ok: true, session };
   }
 
   /**
