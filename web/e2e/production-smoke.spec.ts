@@ -555,5 +555,7 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   );
 
   await page.getByRole('button', { name: 'Log out' }).click();
+  await expect(page.getByRole('group', { name: 'Confirm logout' })).toBeVisible();
+  await page.getByRole('button', { name: 'Yes, log out' }).click();
   await expect(page).toHaveURL(`${PWA_ORIGIN}/login`);
 });
