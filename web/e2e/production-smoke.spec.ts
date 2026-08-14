@@ -57,6 +57,17 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   request,
 }) => {
   const password = process.env.LOYISO_BOOTSTRAP_PASSWORD;
+  const expectedSyncResult = process.env.EXPECTED_SYNC_RESULT ?? 'applied-or-skipped';
+  requireCondition(
+    expectedSyncResult === 'applied-or-skipped' || expectedSyncResult === 'skipped',
+    'EXPECTED_SYNC_RESULT must be applied-or-skipped or skipped',
+  );
+  const workflowSha = process.env.GITHUB_SHA?.trim().toLowerCase();
+  requireCondition(
+    typeof workflowSha === 'string' && /^[0-9a-f]{40}$/.test(workflowSha),
+    'GITHUB_SHA must identify the exact production release under test',
+  );
+  const expectedRelease = workflowSha!.slice(0, 7);
   requireCondition(
     typeof password === 'string' && password.length > 0,
     'LOYISO_BOOTSTRAP_PASSWORD is required',
@@ -114,6 +125,8 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   const refreshedDeepLink = await page.reload({ waitUntil: 'domcontentloaded' });
   expect(refreshedDeepLink?.status(), 'Login deep-link refresh failed').toBe(200);
   await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+  const releaseIdentifier = page.getByRole('contentinfo', { name: 'Application release' });
+  await expect(releaseIdentifier).toHaveText(`Release ${expectedRelease}`);
 
   const manifestResponse = await request.get(`${PWA_ORIGIN}/manifest.webmanifest`);
   requireNoCache(manifestResponse, 'Web app manifest');
@@ -278,6 +291,7 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   await requireBrowserCors(productsResponse, 'Product catalogue');
   await expect(page).toHaveURL(`${PWA_ORIGIN}/log-session`);
   await expect(page.getByRole('heading', { name: 'Log Session' })).toBeVisible();
+  await expect(releaseIdentifier).toHaveText(`Release ${expectedRelease}`);
 
   await page.getByRole('link', { name: 'Players' }).click();
   const playerSearch = page.getByLabel('Search players by name');
@@ -437,12 +451,16 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   const matchingResults = syncResults.filter((result) =>
     CLIENT_IDS.includes(String(result.client_id) as (typeof CLIENT_IDS)[number]),
   );
+  const expectedStatusesMatch = matchingResults.every((result) =>
+    expectedSyncResult === 'skipped'
+      ? result.status === 'skipped'
+      : result.status === 'applied' || result.status === 'skipped',
+  );
   requireCondition(
-    matchingResults.length === 2 &&
-      matchingResults.every(
-        (result) => result.status === 'applied' || result.status === 'skipped',
-      ),
-    'Sync did not safely apply or idempotently skip both synthetic actions',
+    matchingResults.length === 2 && expectedStatusesMatch,
+    expectedSyncResult === 'skipped'
+      ? 'Stable synthetic replay did not skip both existing actions'
+      : 'Sync did not safely apply or idempotently skip both synthetic actions',
   );
   await expect(
     page.getByLabel('Sync status').getByText('Up to date — no items waiting to sync.'),

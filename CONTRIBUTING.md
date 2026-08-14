@@ -106,14 +106,16 @@ updated additively.
 Current production uses separate Vercel projects for the API and PWA, backed by
 Supabase. Follow [`docs/deployment-runbook.md`](docs/deployment-runbook.md),
 correlate the live verification run's `head_sha` with the Vercel Production
-deployment SHA, and then complete the browser smoke checklist. The repository
-does not establish the selected Vercel/Supabase
-storage regions or provider terms, so do not claim `af-south-1` residency for
-that path without separate evidence.
+deployment SHA, complete two protected browser smoke runs for the same candidate
+SHA, and then record the synthetic-only
+[Phase 1 field-acceptance rehearsal](docs/field-acceptance-checklist.md) on the
+actual lounge device. The repository does not establish the selected
+Vercel/Supabase storage regions or provider terms, so do not claim
+`af-south-1` residency for that path without separate evidence.
 
 The browser-only GitHub **Deploy** workflow documented in
 [`docs/deploy-from-github.md`](docs/deploy-from-github.md) is the optional future
 AWS full-stack path and needs live AWS credentials. **Phase 2 (Lesson Engine,
-Bedrock) remains gated behind Phase 1 browser and field acceptance** — do not
-begin Phase 2 work until the current release passes all six smoke checks and is
-used successfully in the real lounge.
+Bedrock) remains gated behind a recorded Phase 1 field-acceptance GO** — do not
+begin Phase 2 work until the candidate release passes the same-SHA API and
+browser gates and the accepted device completes the real-lounge rehearsal.

@@ -35,11 +35,19 @@ substituting its PWA and API origins.
 The manually dispatched **Verify Live PWA Browser** workflow runs the automated
 parts of all six checks from `main`. It requires the workflow SHA to remain the
 current `main` commit, verifies successful Vercel-bot Production deployments and
-approved project status targets attached to that SHA, and requires a successful
-same-SHA **Verify Live API Role Access** run after the API deployment. It reads
-`LOYISO_BOOTSTRAP_PASSWORD` only from the protected `production` environment,
-and writes only to `API Verification Canary v1`. Stable action identities make reruns idempotent. It publishes no browser
-artifacts, credentials, JWTs, roster data, or record identifiers.
+approved project status targets attached to that SHA, requires a successful
+same-SHA **Verify Live API Role Access** run after the API deployment, and
+requires the visible app Release to match that workflow SHA before and after
+login. It reads `LOYISO_BOOTSTRAP_PASSWORD` only from the protected `production`
+environment, and writes only to `API Verification Canary v1`. Stable action
+identities make reruns idempotent. It publishes no browser artifacts,
+credentials, JWTs, roster data, or record identifiers.
+
+Run the workflow **twice** for the field-acceptance candidate SHA. On the first
+run keep **Expected sync result** at `applied-or-skipped`. On the second run
+select `skipped`; it must replay the same stable identities without creating
+another server record. Record both successful run links in the field-acceptance
+evidence.
 
 Headless automation verifies the installability prerequisites—manifest metadata,
 loadable and decodable icon assets, HTTPS, deep-link fallback and an activated
@@ -75,3 +83,8 @@ back only the component changed. When validating a replacement PWA project or
 new environment, keep its generated hostname unpublished; remove any alias or
 disable the replacement project if needed, and remove its exact API CORS origin
 if abandoning that release.
+
+Passing these browser checks makes the release eligible for—not finished
+with—the synthetic-only
+[Phase 1 field-acceptance rehearsal](field-acceptance-checklist.md). Real learner
+use and Phase 2 remain blocked until that physical-device gate records a GO.

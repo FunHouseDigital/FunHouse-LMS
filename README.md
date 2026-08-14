@@ -13,15 +13,16 @@ under POPIA, on a lean footprint targeting **under US$80/month**.
 > **Current rollout:** the Container API and Revenue PWA are deployed as
 > separate Vercel projects from this repository. The API project uses the
 > repository root and connects to Supabase; the PWA project builds from `web/`.
-> Migration 010 and the dedicated Supabase runtime-role verification completed
-> before the client-identity API revision was merged. Release acceptance is
-> still pending: rerun **Verify Live API Role Access** from `main`, record
-> the workflow run's `head_sha`, and require it to match the API's Vercel
-> Production deployment SHA. Then complete all six browser smoke checks and
-> Phase 1 field acceptance before using the PWA with real learner data. The AWS
-> App Runner/RDS/S3/CloudFront infrastructure remains an optional future
-> full-stack path; see [`docs/deployment-runbook.md`](docs/deployment-runbook.md)
-> for both procedures.
+> Migration 010 and dedicated runtime-role verification are established. Every
+> candidate release must still complete the ordered gate: successful API and PWA
+> Production deployments for the exact `main` SHA, **Verify Live API Role
+> Access**, two same-SHA protected browser runs (including stable-identity
+> replay), and the synthetic-only
+> [Phase 1 field-acceptance rehearsal](docs/field-acceptance-checklist.md) on the
+> actual lounge device. Complete the full sequence before using real learner
+> data or beginning Phase 2. The AWS App Runner/RDS/S3/CloudFront infrastructure
+> remains an optional future full-stack path; see
+> [`docs/deployment-runbook.md`](docs/deployment-runbook.md) for both procedures.
 
 ## Architecture overview
 
@@ -74,7 +75,7 @@ funhouse_pipeline/   # Phase 0 ETL + PostgreSQL schema/migrations/seed
 funhouse_api/        # FastAPI Container API (auth, RBAC, entitlements, sync)
 web/                 # offline-first Revenue PWA (React/Vite, IndexedDB, SW)
 infra/               # Terraform IaC for af-south-1 (VPC, RDS, App Runner, S3/CloudFront, SSM)
-docs/                # deployment runbook, smoke-test checklist, pipeline command reference
+docs/                # deployment, smoke, field-acceptance, and command runbooks
 tests/               # pytest suite for the pipeline + API (+ Hypothesis property tests)
 config.example.yaml  # sample configuration
 pyproject.toml       # Python project + dev extras

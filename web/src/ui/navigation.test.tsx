@@ -63,6 +63,9 @@ describe('Role-gated navigation + route guard (Req 2)', () => {
     // Guard redirects to /login.
     expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: /primary/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('contentinfo', { name: 'Application release' })).toHaveTextContent(
+      'Release local',
+    );
   });
 
   it('exposes exactly the manager screens for a manager (Req 2.1, 2.4)', async () => {
@@ -72,6 +75,9 @@ describe('Role-gated navigation + route guard (Req 2)', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Log Session' })).toBeInTheDocument();
     });
+    expect(screen.getByRole('contentinfo', { name: 'Application release' })).toHaveTextContent(
+      'Release local',
+    );
 
     // Manager nav links present.
     for (const label of ['Log Session', 'Players', 'Today', 'Sell']) {
