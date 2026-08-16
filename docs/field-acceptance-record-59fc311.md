@@ -1,22 +1,24 @@
-# Phase 1 Field-Acceptance Record — Release `5f0cf74`
+# Phase 1 Field-Acceptance Record — Release `59fc311`
 
 This is the working acceptance record for the release currently under test. It
 instantiates the record template in
 [`field-acceptance-checklist.md`](./field-acceptance-checklist.md) for production
-`main` SHA `5f0cf74`.
+`main` SHA `59fc311`.
 
-> **Why `5f0cf74` and not `184cec0`?** The earlier record was pinned to
-> `184cec0`. Merging that record (PR #43) advanced `main` to the merge commit
-> `5f0cf74` and triggered fresh Vercel Production deployments, so the live app
-> now shows **Release `5f0cf74`**. The delta from `184cec0` is documentation
-> only (this record file); no application, API, or database behaviour changed.
-> Because the gate requires the recorded SHA to equal current `main` and the
-> on-device Release to match, all SHA-pinned automated evidence below was
-> re-run against `5f0cf74`.
+> **Candidate history.** `184cec0` → `5f0cf74` (docs-only) → `59fc311`. Unlike
+> the earlier docs-only move, `59fc311` contains **real application changes**:
+> #44 fixed the installed-PWA session lifecycle (`web/src/domain/authManager.ts`,
+> `authState.tsx`, `localStore.ts`), and #46/#47 extended the production smoke to
+> assert logout confirmation and protected-session restoration on a new browser
+> page. Because runtime behaviour changed, **all** SHA-pinned automated evidence
+> below was re-run against `59fc311`; earlier `184cec0`/`5f0cf74` evidence is
+> superseded.
 >
 > **Do not merge this record to `main` until after the physical gate and final
-> sign-off** — merging would again advance `main`, move the candidate SHA, and
-> invalidate this evidence. Review it on the pull request; keep it on the branch.
+> sign-off** — merging advances `main`, redeploys, and moves the candidate SHA.
+> Note that any *code* PR merged before the physical rehearsal will also move the
+> candidate and require re-verification; run the on-device rehearsal only once
+> development is frozen on the intended release.
 
 Kiro has completed the automated release evidence and the read-only database
 preflight (Section 1). The lounge operator completes Sections 2–5 on the actual
@@ -31,15 +33,15 @@ file.**
 
 ```text
 Test date (Africa/Johannesburg):                        [operator to complete on rehearsal day]
-Production main SHA (full 40 characters):               5f0cf74e12666b35f4fbed90c18037c6cd16e4ed
-Visible app release (first 7 SHA characters):           5f0cf74
-PWA production deployment link or ID:                   Vercel funhouse-revenue-pwa Production, commit 5f0cf74 — success, deployment id 5914640396 (https://vercel.com/fun-house-digital/funhouse-revenue-pwa/A9ULB7gWYkHDa2LPwGoafrRGo4YE); live bundle serves Release 5f0cf74
-API production deployment link or ID:                   Vercel fun-house-lms Production, commit 5f0cf74 — success, deployment id 5914638496 (https://vercel.com/fun-house-digital/fun-house-lms/9KZ4yeurVCNyUedxRHarrx7b9oS1); live /health responds {"status":"ok"}
-Verify Live API Role Access run link or ID:             https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31848380695
-Verify Live PWA Browser first run link or ID:           https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31848425889 (mode: applied-or-skipped)
-Verify Live PWA Browser replay run link or ID:          https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31848504235 (mode: skipped, stable-identity replay)
-Prepare Phase 1 Field Acceptance run link or ID/date:   https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31848383148 (2026-08-14 22:54 UTC)
-Security Advisor evidence reference/date:               0 errors, 0 warnings, 4 info suggestions — observed 2026-08-14 (Africa/Johannesburg); DB unchanged since observation (184cec0 → 5f0cf74 delta is docs-only)
+Production main SHA (full 40 characters):               59fc311c478682060766543a7b154979ec3d08d1
+Visible app release (first 7 SHA characters):           59fc311
+PWA production deployment link or ID:                   Vercel funhouse-revenue-pwa Production, commit 59fc311 — success, deployment id 5915059049 (https://vercel.com/fun-house-digital/funhouse-revenue-pwa/3etQ4zRu51ZCwJNr89uhWV3T8UA1); live bundle serves Release 59fc311
+API production deployment link or ID:                   Vercel fun-house-lms Production, commit 59fc311 — success, deployment id 5915057491 (https://vercel.com/fun-house-digital/fun-house-lms/HM1MHiW82zt1RGaM9UM5npCbApQh); live /health responds {"status":"ok"}
+Verify Live API Role Access run link or ID:             https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31851338986
+Verify Live PWA Browser first run link or ID:           https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31851392748 (mode: applied-or-skipped)
+Verify Live PWA Browser replay run link or ID:          https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31851492067 (mode: skipped, stable-identity replay)
+Prepare Phase 1 Field Acceptance run link or ID/date:   https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31851586645 (2026-08-14 23:48 UTC)
+Security Advisor evidence reference/date:               0 errors, 0 warnings, 4 info suggestions — observed 2026-08-14 (Africa/Johannesburg); the 5f0cf74 → 59fc311 changes are application-only and touch no database object, and the re-run preflight re-confirmed 14/14 tables and 24/24 policies
 Last database migration, role, grant, or policy change date: [founder to confirm none occurred after 2026-08-14 preflight]
 Stable PWA origin: https://funhouse-revenue-pwa.vercel.app
 API origin: https://fun-house-lms.vercel.app
@@ -57,48 +59,51 @@ History session count before rehearsal:                 [operator to complete]
 ## 1. Release and security prerequisites
 
 Automated release and read-only database evidence — completed by Kiro against
-`main` SHA `5f0cf74`.
+`main` SHA `59fc311`.
 
-- [x] The recorded SHA is the current `main` SHA. — `5f0cf74e12666b35f4fbed90c18037c6cd16e4ed`.
+- [x] The recorded SHA is the current `main` SHA. — `59fc311c478682060766543a7b154979ec3d08d1`.
 - [x] Both Vercel Production deployments attached to that SHA completed
       successfully; neither build was skipped. — Vercel commit statuses
       `Vercel – fun-house-lms` and `Vercel – funhouse-revenue-pwa` are both
-      `success` for `5f0cf74`; Production deployment objects `5914638496` (API)
-      and `5914640396` (PWA) report state `success`. Kiro self-verified the live
-      PWA bundle serves `Release 5f0cf74` and the live API `/health` responds
+      `success` for `59fc311`; Production deployment objects `5915057491` (API)
+      and `5915059049` (PWA) report state `success`. Kiro self-verified the live
+      PWA bundle serves `Release 59fc311` and the live API `/health` responds
       `{"status":"ok"}`.
-- [x] The app visibly shows **Release `5f0cf74`**, and those seven characters
+- [x] The app visibly shows **Release `59fc311`**, and those seven characters
       match the start of the recorded full SHA. — Confirmed in the live PWA
       bundle; operator re-confirms on-device before and after login in Section 2.
 - [x] **Verify Live API Role Access** passed for that SHA after the API
-      production deployment. — run 31848380695.
+      production deployment. — run 31851338986 (23:43 UTC).
 - [x] **Verify Live PWA Browser** passed twice for that same SHA after the
       role-access run. The first used `applied-or-skipped`; the second selected
       `skipped` and proved replay of the workflow's stable action identities.
-      — runs 31848425889 then 31848504235.
+      Both runs also confirmed a new browser page restored the protected session
+      from origin storage without another login. — runs 31851392748 (23:44) then
+      31851492067 (23:46).
 - [x] The stable PWA and API origins above are unchanged and use HTTPS.
 - [x] **Prepare Phase 1 Field Acceptance** passed for the recorded SHA. Its
       summary confirms 14/14 expected tables, 24/24 exact runtime-only policies,
       the fixed empty consent-function search path, and runtime least privilege.
-      — run 31848383148.
+      — run 31851586645 (23:48 UTC).
 - [x] The preflight and recorded Supabase Security Advisor observation are no
-      more than seven days old. — Preflight 2026-08-14 22:54 UTC; Advisor
+      more than seven days old. — Preflight 2026-08-14 23:48 UTC; Advisor
       observed 2026-08-14.
 - [x] The recorded Supabase Security Advisor evidence reports zero errors and
       zero warnings. — 0 errors, 0 warnings (4 info-level suggestions, which do
       not block the gate), observed 2026-08-14.
 - [ ] The founder confirms no relevant database change occurred after the
       preflight and Advisor observation. — **Founder to confirm.** (The
-      `184cec0` → `5f0cf74` change is documentation only and touched no
-      database object.)
+      `5f0cf74` → `59fc311` change is application-only and touched no database
+      object; the re-run preflight re-confirmed the expected tables and policies.)
 - [ ] The operator has the approved `Loyiso` and second seeded-role
       password-manager entries. Neither value has been copied into this record,
       chat, a screenshot, or a workflow input. — **Operator/founder to confirm.**
 
-**Prerequisite result:** Automated evidence **PASS** for `5f0cf74`. Two
+**Prerequisite result:** Automated evidence **PASS** for `59fc311`. Two
 founder/operator-only items remain open (founder confirmation of no
 post-preflight database change, and password-manager entries available); the
-prerequisite is not final **PASS** until those are confirmed.
+prerequisite is not final **PASS** until those are confirmed, development is
+frozen on this release, and the physical rehearsal is complete.
 
 ## 2. Physical-device install, upgrade and role transition
 
@@ -108,7 +113,7 @@ Completed on the lounge device by the operator — see checklist Section 2.
 
 - [ ] Installation or Add to Home Screen was available.
 - [ ] Launch from the installed icon succeeded.
-- [ ] Visible Release matched the candidate SHA (`5f0cf74`).
+- [ ] Visible Release matched the candidate SHA (`59fc311`).
 - [ ] Close and relaunch succeeded with the same Release.
 
 ### 2.2 Existing-app upgrade and seeded-role transition
@@ -127,7 +132,7 @@ Use only `API Verification Canary v1`, Cash **R0**, and never Entitlement draw.
 
 ### 3.1 Prepare online
 
-- [ ] Visible Release matched the candidate SHA (`5f0cf74`).
+- [ ] Visible Release matched the candidate SHA (`59fc311`).
 - [ ] Synthetic player was available in Players and Log Session.
 - [ ] Existing history count and rehearsal start time were recorded.
 - [ ] Starting waiting count was exactly zero with no sync warning.
