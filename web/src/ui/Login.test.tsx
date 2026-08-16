@@ -197,3 +197,44 @@ describe('Login screen (Req 1.1, 1.3, 1.4)', () => {
     expect(screen.getByRole('link', { name: 'Sell' })).toBeInTheDocument();
   });
 });
+
+
+describe('Founder password reset help (guided, credential-free)', () => {
+  beforeEach(async () => {
+    await resetDb();
+    clearSessionKey();
+  });
+
+  it('opens guidance with the reset workflow link and never triggers a login call', async () => {
+    const user = userEvent.setup();
+    const loginFn = vi.fn(async () => successResponse('founder'));
+    renderLogin(loginFn);
+
+    await user.click(screen.getByTestId('founder-reset-open'));
+
+    expect(screen.getByRole('heading', { name: 'Founder password reset' })).toBeInTheDocument();
+    const workflowLink = screen.getByRole('link', { name: /Rotate Live Founder Password/i });
+    expect(workflowLink).toHaveAttribute(
+      'href',
+      'https://github.com/FunHouseDigital/FunHouse-LMS/actions/workflows/rotate-founder-password.yml',
+    );
+    // The reset view is credential-free: no password field, no login call.
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    expect(loginFn).not.toHaveBeenCalled();
+  });
+
+  it('returns to the login form when dismissed', async () => {
+    const user = userEvent.setup();
+    const loginFn = vi.fn(async () => successResponse('founder'));
+    renderLogin(loginFn);
+
+    await user.click(screen.getByTestId('founder-reset-open'));
+    expect(screen.getByRole('heading', { name: 'Founder password reset' })).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('founder-reset-back'));
+
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Identifier')).toBeInTheDocument();
+    expect(loginFn).not.toHaveBeenCalled();
+  });
+});
