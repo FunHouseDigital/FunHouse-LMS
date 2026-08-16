@@ -115,7 +115,7 @@ synthetic-only
 [Phase 1 field-acceptance rehearsal](field-acceptance-checklist.md) on the
 actual lounge device.
 
-### Staff login secrets and Loyiso rotation **[FOUNDER-RUN / GITHUB ACCOUNT]**
+### Staff login secrets, Loyiso and founder rotation **[FOUNDER-RUN / GITHUB ACCOUNT]**
 
 Production keeps separate protected GitHub environment secrets for each seeded
 staff credential:
@@ -146,6 +146,27 @@ To establish or change Loyiso's password without changing Aya:
 4. Sign in to the PWA as `Loyiso` using the password-manager value and complete
    the offline smoke test. Do not share the password with the deployment
    operator.
+
+To establish or change Aya's founder password without changing Loyiso:
+
+1. In GitHub, open **Settings → Environments → production → Environment
+   secrets** and create or replace `BOOTSTRAP_USER_PASSWORD` (Aya's dedicated
+   secret) with the new password-manager value.
+2. From the `main` branch, run **Rotate Live Founder Password** with
+   confirmation `rotate-live-founder-password`. The serialized workflow (same
+   `live-supabase-bootstrap` concurrency group, so it never overlaps
+   initialisation or the Loyiso rotation) validates the exact seeded `Aya` row,
+   founder role, Smithfield scope, and uniqueness under table and row locks
+   before replacing only its bcrypt hash.
+3. Require the workflow's live founder login probe to pass. Then run **Verify
+   Live API Role Access**, which reads the three distinct protected secrets and
+   verifies founder, manager, and facilitator access.
+4. Sign in to the PWA as `Aya` using the password-manager value. Do not share
+   the password with the deployment operator.
+
+The rotation modes are account-bound: `--rotate-founder-password` acts only on
+`Aya` and `--rotate-loyiso-password` only on `Loyiso`, and the two flags cannot
+be combined, so neither can change the other's credential.
 
 The normal **Initialize Live Supabase Database** workflow remains
 initialisation-only and refuses implicit rotation. Selecting `Loyiso` there
