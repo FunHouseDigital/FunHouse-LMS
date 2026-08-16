@@ -1,10 +1,12 @@
-"""Safely initialize seeded passwords and explicitly rotate Loyiso's password.
+"""Safely initialize seeded passwords and explicitly rotate seeded logins.
 
 This command is intended for controlled deployment automation after the schema
 and reference seed have been applied. It reads plaintext passwords only from the
 environment and never prints or stores them; only bcrypt hashes are persisted.
 Initialization fails closed when a different hash already exists. Rotation is a
-separate, explicit CLI mode restricted to the seeded Loyiso manager account.
+separate, explicit CLI mode: ``--rotate-loyiso-password`` for the seeded Loyiso
+manager and ``--rotate-founder-password`` for the seeded Aya founder. Each mode
+is bound to its own account, so neither can change the other's credential.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ _MAX_BCRYPT_BYTES = 72
 _EXPECTED_USER_ROLES = {user.name: user.role for user in SEED_USERS}
 _EXPECTED_USER_SCHOOLS = {user.name: user.school_name for user in SEED_USERS}
 _ALLOWED_USER_NAMES = frozenset(_EXPECTED_USER_ROLES)
-_ROTATABLE_USER_NAMES = frozenset({"Loyiso"})
+_ROTATABLE_USER_NAMES = frozenset({"Loyiso", "Aya"})
 
 
 class BootstrapError(RuntimeError):
@@ -50,7 +52,8 @@ def bootstrap_user(
 
     A same-password rerun is a no-op. An existing different password fails
     closed unless explicit rotation is enabled for an approved account. The
-    rotation allowlist currently contains only the seeded Loyiso manager.
+    rotation allowlist currently contains the seeded Loyiso manager and Aya
+    founder accounts, each reachable only through its dedicated CLI mode.
     """
     if name not in _ALLOWED_USER_NAMES:
         allowed = ", ".join(sorted(_ALLOWED_USER_NAMES))
@@ -139,16 +142,25 @@ def apply(
     *,
     env: Mapping[str, str] | None = None,
     rotate_loyiso_password: bool = False,
+    rotate_founder_password: bool = False,
 ) -> int:
     """Load configuration and initialize or explicitly rotate a seeded login."""
     env = os.environ if env is None else env
+    if rotate_loyiso_password and rotate_founder_password:
+        raise BootstrapError(
+            "choose only one rotation mode: --rotate-loyiso-password or "
+            "--rotate-founder-password"
+        )
     name = _required_env(env, "BOOTSTRAP_USER_NAME")
     password = _required_env(env, "BOOTSTRAP_USER_PASSWORD")
     if rotate_loyiso_password and name != "Loyiso":
         raise BootstrapError("--rotate-loyiso-password requires BOOTSTRAP_USER_NAME=Loyiso")
+    if rotate_founder_password and name != "Aya":
+        raise BootstrapError("--rotate-founder-password requires BOOTSTRAP_USER_NAME=Aya")
+    rotate_existing = rotate_loyiso_password or rotate_founder_password
     config = load_config(config_path, env=env)
 
-    action = "Rotating" if rotate_loyiso_password else "Bootstrapping"
+    action = "Rotating" if rotate_existing else "Bootstrapping"
     print(
         f"{action} {name!r} in {config.database.host}:{config.database.port}"
         f"/{config.database.dbname} (sslmode={config.database.sslmode})"
@@ -161,7 +173,7 @@ def apply(
             conn,
             name=name,
             password=password,
-            rotate_existing=rotate_loyiso_password,
+            rotate_existing=rotate_existing,
         )
     finally:
         conn.close()
@@ -169,9 +181,9 @@ def apply(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI wrapper with an explicit, Loyiso-only password rotation mode."""
+    """CLI wrapper with explicit, account-bound password rotation modes."""
     parser = argparse.ArgumentParser(
-        description="Initialize a seeded login or explicitly rotate Loyiso's password."
+        description="Initialize a seeded login or explicitly rotate the Loyiso or Aya password."
     )
     parser.add_argument("config_path", nargs="?", help="optional configuration file")
     parser.add_argument(
@@ -179,11 +191,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="replace Loyiso's existing bcrypt hash after all account checks pass",
     )
+    parser.add_argument(
+        "--rotate-founder-password",
+        action="store_true",
+        help="replace Aya's existing bcrypt hash after all account checks pass",
+    )
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         return apply(
             args.config_path,
             rotate_loyiso_password=args.rotate_loyiso_password,
+            rotate_founder_password=args.rotate_founder_password,
         )
     except BootstrapError as exc:
         print(f"Bootstrap refused: {exc}", file=sys.stderr)
