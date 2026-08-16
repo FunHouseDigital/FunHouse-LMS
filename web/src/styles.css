@@ -689,6 +689,38 @@ form [role='alert'] {
   font-size: 0.82rem;
 }
 
+.login-reset-hint {
+  margin: 1rem 0 0;
+  text-align: center;
+}
+
+/* Founder password reset help (credential-free guidance) */
+.founder-reset-help {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding: clamp(1.2rem, 5vw, 2rem);
+  background: linear-gradient(145deg, rgba(24, 35, 59, 0.94), rgba(14, 21, 38, 0.96));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.founder-reset-help ol {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.founder-reset-help .founder-reset-note {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+}
+
 /* Flexible option and picker lists */
 fieldset > ul,
 [data-screen-body='log-session'] fieldset ul,
