@@ -41,7 +41,7 @@ Verify Live PWA Browser first run link or ID:           https://github.com/FunHo
 Verify Live PWA Browser replay run link or ID:          https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31975477906 (mode: skipped, stable-identity replay)
 Prepare Phase 1 Field Acceptance run link or ID/date:   https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/31975369914 (2026-08-16 22:05 UTC)
 Security Advisor evidence reference/date:               0 errors, 0 warnings, 4 info suggestions — observed 2026-08-14 (Africa/Johannesburg), within the 7-day window; no database migration or policy change merged since (5f0cf74 → 30a0803 changes are PWA + offline pipeline tooling only), and the re-run preflight re-confirmed 14/14 tables and 24/24 policies. Founder to re-confirm 0/0 if any doubt.
-Last database migration, role, grant, or policy change date: [founder to confirm none occurred after the 2026-08-16 preflight]
+Last database migration, role, grant, or policy change date: None. (A founder password rotation on 2026-08-17 updated a single users.password_hash row — a credential data change, not a schema/role/grant/ownership/function/policy change — so the preflight and Advisor evidence remain valid.)
 Stable PWA origin: https://funhouse-revenue-pwa.vercel.app
 API origin: https://fun-house-lms.vercel.app
 Device model:                                           [operator to complete]
@@ -95,20 +95,20 @@ Automated release and read-only database evidence — completed by Kiro against
       `59fc311` → `30a0803` changes are PWA and offline-pipeline tooling only
       and touched no database object; no migration was added — the schema
       remains migrations 001–010.)
-- [ ] The operator has the approved `Loyiso` and second seeded-role
-      password-manager entries. — **Loyiso available; Aya founder entry pending
-      reset.** The founder resets it via the owner-role **Rotate Live Founder
-      Password** workflow (#49), now guided from the app's login screen (#50),
-      and stores the new value in the password manager before final GO. Neither
-      value has been copied into this record, chat, a screenshot, or a workflow
-      input.
+- [x] The operator has the approved `Loyiso` and second seeded-role
+      password-manager entries. — `Loyiso` available; the **Aya** founder
+      credential was reset via the owner-role **Rotate Live Founder Password**
+      workflow (run 32061953897, 2026-08-17) and its live founder login +
+      protected read were verified, and the new value is stored in the password
+      manager. Neither value has been copied into this record, chat, a
+      screenshot, or a workflow input.
 
-**Prerequisite result:** Automated evidence **PASS** for `30a0803`. Two
-founder/operator-only items remain open: (1) founder confirmation of no
-post-preflight database change, and (2) the founder resetting and storing the
-Aya credential. The prerequisite is not final **PASS** until those are
-confirmed, development is frozen on this release, and the physical rehearsal is
-complete.
+**Prerequisite result:** Automated evidence **PASS** for `30a0803`, and the Aya
+founder credential is reset, verified, and stored. One founder confirmation
+remains (no post-preflight schema/role/grant/policy change — the only database
+change since is the single-row founder password rotation noted above). The
+prerequisite reaches final **PASS** once that is confirmed, development is
+frozen on this release, and the physical rehearsal is complete.
 
 ## 2. Physical-device install, upgrade and role transition
 
