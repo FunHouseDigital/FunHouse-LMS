@@ -99,21 +99,22 @@ Automated release and read-only database evidence — completed by Kiro against
       preflight and Advisor observation. — **Founder to confirm.** (The
       `30a0803` → `0b6df3d` change is a single docs file and touched no database
       object; no migration was added — the schema remains migrations 001–010.)
-- [ ] The operator has the approved `Loyiso` and second seeded-role
-      password-manager entries. — **Loyiso available.** The **Rotate Live Founder
-      Password** workflow succeeded for this release
-      ([run 32061953897](https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32061953897),
-      2026-08-17), so the Aya founder credential has been reset; the **founder
-      confirms the reset value is stored in the password manager** before final
-      GO. Neither value has been copied into this record, chat, a screenshot, or
-      a workflow input.
+- [x] The operator has the approved `Loyiso` and second seeded-role
+      password-manager entries. — **Founder confirmed the Aya credential was
+      saved without sharing its value.** The **Rotate Live Founder Password**
+      workflow then succeeded against this release
+      ([run 32766576106](https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32766576106),
+      2026-08-24): it rotated only Aya's password hash, and the deployed API
+      accepted the new founder login and a protected read. Loyiso and
+      Facilitator credentials were unchanged. No credential, token, or roster
+      data was logged or copied into this record, chat, a screenshot, or a
+      workflow input.
 
-**Prerequisite result:** Automated evidence **PASS** for `0b6df3d`. Two
-founder-only items remain open: (1) founder confirmation of no post-preflight
-database change, and (2) founder confirmation that the reset Aya credential is
-stored in the password manager. The prerequisite is not final **PASS** until
-those are confirmed, development is frozen on this release, and the physical
-rehearsal is complete.
+**Prerequisite result:** Automated evidence **PASS** for `0b6df3d`, and the
+founder credential is ready. One founder-only item remains open: confirmation
+that no relevant database change occurred after the 2026-08-23 preflight. The
+prerequisite is not final **PASS** until that is confirmed, development is
+frozen on this release, and the physical rehearsal is complete.
 
 A synthetic-only rehearsal may diagnose a device while a security prerequisite
 is pending, but real learner data remains prohibited and the final gate cannot
