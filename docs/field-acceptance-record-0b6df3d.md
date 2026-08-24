@@ -128,7 +128,8 @@ Completed on the lounge device by the operator — see checklist Section 2.
 
 - [ ] Installation or Add to Home Screen was available.
 - [ ] Launch from the installed icon succeeded.
-- [ ] Visible Release matched the candidate SHA (`0b6df3d`).
+- [x] Visible Release matched the candidate SHA (`0b6df3d`). — Founder
+      confirmed the lounge device displayed `0b6df3d` on 24 August 2026.
 - [ ] Close and relaunch succeeded with the same Release.
 
 ### 2.2 Existing-app upgrade and seeded-role transition
