@@ -20,10 +20,10 @@ under test. It instantiates the record template in
 > be merged before GO*.
 
 Kiro has completed the automated release evidence and read-only database
-preflight (Section 1) against `7b9a5ea`. The lounge operator completes Sections
-2–5 on the actual device, and the founder completes the current Security Advisor
-confirmation, confirms no later relevant database change, and records the gate
-decision in Section 6.
+preflight (Section 1) against `7b9a5ea`. The founder confirmed a current
+Security Advisor result of 0 errors and 0 warnings on 2026-08-25. The lounge
+operator completes Sections 2–5 on the actual device, and the founder confirms
+no later relevant database change and records the gate decision in Section 6.
 
 The in-app rehearsal assistant is a convenience guide only. The authoritative
 requirements and final decision remain in
@@ -46,7 +46,7 @@ Verify Live API Role Access run link or ID:             https://github.com/FunHo
 Verify Live PWA Browser first run link or ID:           https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32890730880 (mode: applied-or-skipped)
 Verify Live PWA Browser replay run link or ID:          https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32890985837 (mode: skipped, stable-identity replay)
 Prepare Phase 1 Field Acceptance run link or ID/date:   https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32890657288 (2026-08-25 19:37 UTC)
-Security Advisor evidence reference/date:               Last recorded observation was 0 errors, 0 warnings and 4 info suggestions on 2026-08-14 (Africa/Johannesburg); this is older than seven days and the founder must re-observe 0 errors and 0 warnings before GO.
+Security Advisor evidence reference/date:               0 errors, 0 warnings and 4 info suggestions — founder-observed 2026-08-25 (Africa/Johannesburg); no screenshot, project identifier or exported report was retained.
 Last database migration, role, grant, or policy change date: [founder to confirm none occurred after the 2026-08-25 preflight — schema remains migrations 001–010]
 Stable PWA origin: https://funhouse-revenue-pwa.vercel.app
 API origin: https://fun-house-lms.vercel.app
@@ -89,17 +89,16 @@ Automated release and read-only database evidence — completed by Kiro against
       summary confirms 14/14 expected tables, 24/24 exact runtime-only policies,
       the fixed empty consent-function search path, and runtime least privilege.
       — run 32890657288 (2026-08-25 19:37 UTC).
-- [ ] The preflight and recorded Supabase Security Advisor observation are no
-      more than seven days old. — The preflight is current, but the last
-      Security Advisor observation is from 2026-08-14 and must be refreshed by
-      the founder before GO.
-- [ ] The recorded Supabase Security Advisor evidence reports zero errors and
-      zero warnings. — **Founder to re-observe and confirm 0 errors and 0
-      warnings; do not record project identifiers or screenshots here.**
+- [x] The preflight and recorded Supabase Security Advisor observation are no
+      more than seven days old. — Database preflight and founder observation
+      both completed on 2026-08-25.
+- [x] The recorded Supabase Security Advisor evidence reports zero errors and
+      zero warnings. — Founder observed 0 errors, 0 warnings and 4 info-level
+      suggestions on 2026-08-25; no screenshot, project identifier or exported
+      report was retained.
 - [ ] The founder confirms no relevant database change occurred after the
-      preflight and Advisor observation. — **Founder to confirm after refreshing
-      Security Advisor.** No migration was added by PR #53; the schema remains
-      migrations 001–010.
+      preflight and Advisor observation. — **Founder to confirm.** No migration
+      was added by PR #53; the repository schema remains migrations 001–010.
 - [x] The operator has the approved `Loyiso` and second seeded-role
       password-manager entries. — The founder previously confirmed the Aya
       credential was saved without sharing its value. The Rotate Live Founder
@@ -111,11 +110,12 @@ Automated release and read-only database evidence — completed by Kiro against
       a workflow input.
 
 **Prerequisite result:** Exact-release automated evidence **PASS** for
-`7b9a5ea`, and the seeded credentials are ready. Two founder confirmations
-remain open: a current Security Advisor observation of 0 errors and 0 warnings,
-and confirmation that no relevant database change occurred after the current
-preflight. The prerequisite is not final **PASS** until both are confirmed,
-development is frozen on this release, and the physical rehearsal is complete.
+`7b9a5ea`, the seeded credentials are ready, and the current Security Advisor
+result is 0 errors and 0 warnings. One founder confirmation remains open:
+confirmation that no relevant database change occurred after the 2026-08-25
+preflight and Advisor observation. The prerequisite is not final **PASS** until
+that is confirmed, development is frozen on this release, and the physical
+rehearsal is complete.
 
 A synthetic-only rehearsal may diagnose a device while a security prerequisite
 is pending, but real learner data remains prohibited and the final gate cannot
