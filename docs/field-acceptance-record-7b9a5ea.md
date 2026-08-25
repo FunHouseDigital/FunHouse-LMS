@@ -21,9 +21,11 @@ under test. It instantiates the record template in
 
 Kiro has completed the automated release evidence and read-only database
 preflight (Section 1) against `7b9a5ea`. The founder confirmed a current
-Security Advisor result of 0 errors and 0 warnings on 2026-08-25. The lounge
-operator completes Sections 2–5 on the actual device, and the founder confirms
-no later relevant database change and records the gate decision in Section 6.
+Security Advisor result of 0 errors and 0 warnings on 2026-08-25. Because the
+founder was unsure about intervening database changes, Kiro then reran the
+read-only exact-contract preflight successfully. The lounge operator completes
+Sections 2–5 on the actual device, and the founder records the gate decision in
+Section 6.
 
 The in-app rehearsal assistant is a convenience guide only. The authoritative
 requirements and final decision remain in
@@ -45,9 +47,9 @@ API production deployment link or ID:                   Vercel fun-house-lms Pro
 Verify Live API Role Access run link or ID:             https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32890655986
 Verify Live PWA Browser first run link or ID:           https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32890730880 (mode: applied-or-skipped)
 Verify Live PWA Browser replay run link or ID:          https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32890985837 (mode: skipped, stable-identity replay)
-Prepare Phase 1 Field Acceptance run link or ID/date:   https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32890657288 (2026-08-25 19:37 UTC)
+Prepare Phase 1 Field Acceptance run link or ID/date:   https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32901795975 (2026-08-25 21:35 UTC; fresh post-Advisor exact-contract rerun after founder reported uncertainty)
 Security Advisor evidence reference/date:               0 errors, 0 warnings and 4 info suggestions — founder-observed 2026-08-25 (Africa/Johannesburg); no screenshot, project identifier or exported report was retained.
-Last database migration, role, grant, or policy change date: [founder to confirm none occurred after the 2026-08-25 preflight — schema remains migrations 001–010]
+Last database migration, role, grant, or policy change evidence: No new repository migration through 7b9a5ea (schema migrations 001–010); current live roles, memberships, grants, ownership, functions and policies reverified by post-Advisor run 32901795975.
 Stable PWA origin: https://funhouse-revenue-pwa.vercel.app
 API origin: https://fun-house-lms.vercel.app
 Device model:                                           [operator to complete]
@@ -85,10 +87,11 @@ Automated release and read-only database evidence — completed by Kiro against
       runs 32890730880 then 32890985837. The physical operator must not
       manufacture a duplicate replay.
 - [x] The stable PWA and API origins above are unchanged and use HTTPS.
-- [x] **Prepare Phase 1 Field Acceptance** passed for the recorded SHA. Its
-      summary confirms 14/14 expected tables, 24/24 exact runtime-only policies,
-      the fixed empty consent-function search path, and runtime least privilege.
-      — run 32890657288 (2026-08-25 19:37 UTC).
+- [x] **Prepare Phase 1 Field Acceptance** passed for the recorded SHA after
+      the founder's current Security Advisor observation. Its summary confirms
+      14/14 expected tables, 24/24 exact runtime-only policies, the fixed empty
+      consent-function search path, and runtime least privilege. — fresh
+      post-Advisor run 32901795975 (2026-08-25 21:35 UTC).
 - [x] The preflight and recorded Supabase Security Advisor observation are no
       more than seven days old. — Database preflight and founder observation
       both completed on 2026-08-25.
@@ -96,9 +99,14 @@ Automated release and read-only database evidence — completed by Kiro against
       zero warnings. — Founder observed 0 errors, 0 warnings and 4 info-level
       suggestions on 2026-08-25; no screenshot, project identifier or exported
       report was retained.
-- [ ] The founder confirms no relevant database change occurred after the
-      preflight and Advisor observation. — **Founder to confirm.** No migration
-      was added by PR #53; the repository schema remains migrations 001–010.
+- [x] The relevant production database contract was reverified after the
+      founder reported uncertainty about intervening changes. — Following the
+      authoritative checklist's uncertainty path, fresh read-only run
+      32901795975 rechecked current `main`, then passed the exact live roles,
+      memberships, grants, ownership, functions, policies, sequences, schema
+      and database least-privilege contract. No new repository migration exists
+      through `7b9a5ea`; the schema remains migrations 001–010. This establishes
+      the current accepted state without claiming a historical audit trail.
 - [x] The operator has the approved `Loyiso` and second seeded-role
       password-manager entries. — The founder previously confirmed the Aya
       credential was saved without sharing its value. The Rotate Live Founder
@@ -109,17 +117,16 @@ Automated release and read-only database evidence — completed by Kiro against
       roster data was logged or copied into this record, chat, a screenshot or
       a workflow input.
 
-**Prerequisite result:** Exact-release automated evidence **PASS** for
-`7b9a5ea`, the seeded credentials are ready, and the current Security Advisor
-result is 0 errors and 0 warnings. One founder confirmation remains open:
-confirmation that no relevant database change occurred after the 2026-08-25
-preflight and Advisor observation. The prerequisite is not final **PASS** until
-that is confirmed, development is frozen on this release, and the physical
-rehearsal is complete.
+**Prerequisite result:** **PASS** for release `7b9a5ea`. Exact-release
+automated evidence is green, the seeded credentials are ready, Security Advisor
+reports 0 errors and 0 warnings, and the fresh post-Advisor database preflight
+passed. The founder's uncertainty was resolved through the checklist's required
+read-only rerun rather than an unsupported historical claim. Freeze development
+and production database administration on this candidate until the physical
+rehearsal and gate decision are complete.
 
-A synthetic-only rehearsal may diagnose a device while a security prerequisite
-is pending, but real learner data remains prohibited and the final gate cannot
-pass.
+The security prerequisite now passes, but real learner data and Phase 2 remain
+prohibited until the physical rehearsal and final gate decision also pass.
 
 ## 2. Physical-device install, upgrade and role transition
 
