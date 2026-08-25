@@ -25,7 +25,8 @@ export type ScreenId =
   | 'revenue'
   | 'attendance'
   | 'metrics'
-  | 'alerts';
+  | 'alerts'
+  | 'field-acceptance';
 
 export interface NavScreen {
   id: ScreenId;
@@ -41,12 +42,20 @@ export interface NavAuthState {
 
 export const LOGIN_SCREEN: NavScreen = { id: 'login', path: '/login', label: 'Log in' };
 
+/** Shared read-only Phase 1 physical rehearsal assistant. */
+export const FIELD_ACCEPTANCE_SCREEN: NavScreen = {
+  id: 'field-acceptance',
+  path: '/field-acceptance',
+  label: 'Field acceptance',
+};
+
 /** Manager screens, in nav order (Req 2.1). */
 export const MANAGER_SCREENS: readonly NavScreen[] = [
   { id: 'log-session', path: '/log-session', label: 'Log Session' },
   { id: 'players', path: '/players', label: 'Players' },
   { id: 'today', path: '/today', label: 'Today' },
   { id: 'sell', path: '/sell', label: 'Sell' },
+  FIELD_ACCEPTANCE_SCREEN,
 ];
 
 /** Founder screens, in nav order (Req 2.2). */
@@ -55,6 +64,7 @@ export const FOUNDER_SCREENS: readonly NavScreen[] = [
   { id: 'attendance', path: '/attendance', label: 'Attendance & Sessions' },
   { id: 'metrics', path: '/metrics', label: 'Metrics Entry' },
   { id: 'alerts', path: '/alerts', label: 'Alerts' },
+  FIELD_ACCEPTANCE_SCREEN,
 ];
 
 /** Facilitator screens, in nav order. Attendance is the facilitator home. */
@@ -67,7 +77,7 @@ export const FACILITATOR_SCREENS: readonly NavScreen[] = [
 /** Every protected screen (used for exhaustive route generation and tests). */
 export const ALL_PROTECTED_SCREENS: readonly NavScreen[] = [
   ...MANAGER_SCREENS,
-  ...FOUNDER_SCREENS,
+  ...FOUNDER_SCREENS.filter((screen) => !MANAGER_SCREENS.some(({ id }) => id === screen.id)),
   FACILITATOR_SCREENS[1],
 ];
 

@@ -22,6 +22,7 @@ import { Attendance } from './Attendance';
 import { Metrics } from './Metrics';
 import { RevenueDashboard } from './RevenueDashboard';
 import { Alerts } from './Alerts';
+import { FieldAcceptanceRehearsal } from './FieldAcceptanceRehearsal';
 import {
   ALL_PROTECTED_SCREENS,
   defaultPathFor,
@@ -50,6 +51,8 @@ function ScreenBody({ id, label }: { id: ScreenId; label: string }) {
       return <RevenueDashboard />;
     case 'alerts':
       return <Alerts />;
+    case 'field-acceptance':
+      return <FieldAcceptanceRehearsal />;
     default:
       return <PlaceholderScreen title={label} screenId={id} />;
   }
