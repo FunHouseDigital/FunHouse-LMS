@@ -12,7 +12,7 @@ import { useAuth } from '../state/authState';
 import { navScreensFor, type NavAuthState } from '../domain/navigation';
 import { SyncStatusSurface } from './SyncStatusSurface';
 
-export function AppShellNav() {
+export function AppShellNav({ readOnlySync = false }: { readOnlySync?: boolean }) {
   const { isAuthenticated, role, logout } = useAuth();
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const state: NavAuthState = { authenticated: isAuthenticated, role };
@@ -46,7 +46,7 @@ export function AppShellNav() {
         </ul>
         <div className="sidebar-utility">
           {role && <span className="role-chip">{role}</span>}
-          <SyncStatusSurface />
+          {!readOnlySync && <SyncStatusSurface />}
           {confirmingLogout ? (
             <div className="logout-confirmation" role="group" aria-label="Confirm logout">
               <p>Sign out of this device?</p>

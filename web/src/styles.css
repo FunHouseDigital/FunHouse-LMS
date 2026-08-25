@@ -1300,3 +1300,227 @@ tbody tr:last-child td {
     animation-iteration-count: 1 !important;
   }
 }
+
+
+/* Read-only Phase 1 field-acceptance rehearsal assistant */
+.field-acceptance-safety,
+.field-acceptance-restored-warning,
+.field-acceptance-release,
+.field-acceptance-panel {
+  min-width: 0;
+  padding: clamp(1rem, 3vw, 1.35rem);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.field-acceptance-safety {
+  background: linear-gradient(145deg, rgba(247, 185, 85, 0.13), var(--surface));
+  border-color: rgba(247, 185, 85, 0.38);
+}
+
+.field-acceptance-safety h2,
+.field-acceptance-panel h2 {
+  margin-top: 0;
+}
+
+.field-acceptance-safety ul {
+  display: grid;
+  gap: 0.4rem;
+  padding-left: 1.2rem;
+  color: var(--text-soft);
+  line-height: 1.45;
+  list-style: disc;
+}
+
+.field-acceptance-safety p:last-child,
+.field-acceptance-panel > p:last-child,
+.field-acceptance-restored-warning {
+  margin-bottom: 0;
+}
+
+.field-acceptance-release {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 1rem;
+  background: var(--cyan-soft);
+  border-color: rgba(66, 211, 187, 0.25);
+}
+
+.field-acceptance-release code {
+  color: var(--cyan);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.field-acceptance-restored-warning {
+  color: var(--warning);
+  background: rgba(247, 185, 85, 0.08);
+  border-color: rgba(247, 185, 85, 0.25);
+  line-height: 1.5;
+}
+
+.field-acceptance-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.field-acceptance-panel > h2,
+.field-acceptance-panel > p {
+  margin-bottom: 0;
+}
+
+.field-acceptance-timer {
+  color: var(--cyan);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.field-acceptance-actions,
+.field-acceptance-reset-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.field-acceptance-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.field-acceptance-counts > div {
+  min-width: 0;
+  padding: 0.85rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.field-acceptance-counts dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.field-acceptance-counts dd {
+  margin: 0.3rem 0 0;
+  color: var(--text);
+  font-size: 1.3rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.field-acceptance-checks {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.field-acceptance-check-row,
+.field-acceptance-card-check {
+  display: flex;
+  min-height: 48px;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.7rem 0.8rem;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  line-height: 1.45;
+}
+
+.field-acceptance-check-row input,
+.field-acceptance-card-check input {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+.field-acceptance-check-row:has(input:checked),
+.field-acceptance-card-check:has(input:checked) {
+  color: var(--text);
+  background: var(--cyan-soft);
+  border-color: rgba(66, 211, 187, 0.3);
+}
+
+.field-acceptance-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.field-acceptance-table {
+  min-width: 900px;
+  box-shadow: none;
+}
+
+.field-acceptance-table caption {
+  padding: 0.85rem;
+  color: var(--text-soft);
+  background: var(--surface-strong);
+  font-weight: 750;
+  text-align: left;
+}
+
+.field-acceptance-table td:last-child {
+  min-width: 280px;
+}
+
+.field-acceptance-queue-check {
+  margin: 0.55rem 0 0;
+  padding: 0.65rem 0.75rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+}
+
+.field-acceptance-queue-check[data-state='pass'] {
+  color: var(--success);
+  background: rgba(94, 225, 160, 0.08);
+  border-color: rgba(94, 225, 160, 0.22);
+}
+
+.field-acceptance-queue-check[data-state='wait'],
+.field-acceptance-queue-check[data-state='loading'] {
+  color: var(--warning);
+  background: rgba(247, 185, 85, 0.08);
+  border-color: rgba(247, 185, 85, 0.22);
+}
+
+.field-acceptance-queue-check[data-state='stop'] {
+  color: #ffabb7;
+  background: var(--danger-soft);
+  border-color: rgba(255, 113, 133, 0.3);
+}
+
+.field-acceptance-reset {
+  border-style: dashed;
+}
+
+@media (max-width: 680px) {
+  .field-acceptance-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .field-acceptance-actions,
+  .field-acceptance-reset-confirm {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .field-acceptance-actions button,
+  .field-acceptance-reset-confirm button,
+  .field-acceptance-panel > button {
+    width: 100%;
+  }
+}

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../state/authState';
 import { AppShell } from '../App';
@@ -56,6 +56,10 @@ describe('Role-gated navigation + route guard (Req 2)', () => {
     clearSessionKey();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('restricts a protected route to login when no valid JWT is present (Req 2.3)', () => {
     const am = new AuthManager({ loginFn: async () => responseFor('manager') });
     renderApp(am, '/players');
@@ -79,11 +83,15 @@ describe('Role-gated navigation + route guard (Req 2)', () => {
       'Release local',
     );
 
-    // Manager nav links present.
-    for (const label of ['Log Session', 'Players', 'Today', 'Sell']) {
-      expect(screen.getByRole('link', { name: label })).toBeInTheDocument();
-    }
-    // Founder screens excluded from nav (Req 2.4).
+    const nav = screen.getByRole('navigation', { name: /primary/i });
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Log Session',
+      'Players',
+      'Today',
+      'Sell',
+      'Field acceptance',
+    ]);
+    // Founder-only screens excluded from nav (Req 2.4).
     for (const label of ['Revenue Dashboard', 'Attendance & Sessions', 'Metrics Entry', 'Alerts']) {
       expect(screen.queryByRole('link', { name: label })).not.toBeInTheDocument();
     }
@@ -108,9 +116,14 @@ describe('Role-gated navigation + route guard (Req 2)', () => {
       expect(screen.getByRole('heading', { name: 'Revenue Dashboard' })).toBeInTheDocument();
     });
 
-    for (const label of ['Revenue Dashboard', 'Attendance & Sessions', 'Metrics Entry', 'Alerts']) {
-      expect(screen.getByRole('link', { name: label })).toBeInTheDocument();
-    }
+    const nav = screen.getByRole('navigation', { name: /primary/i });
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Revenue Dashboard',
+      'Attendance & Sessions',
+      'Metrics Entry',
+      'Alerts',
+      'Field acceptance',
+    ]);
     for (const label of ['Log Session', 'Players', 'Today', 'Sell']) {
       expect(screen.queryByRole('link', { name: label })).not.toBeInTheDocument();
     }
@@ -123,6 +136,60 @@ describe('Role-gated navigation + route guard (Req 2)', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Revenue Dashboard' })).toBeInTheDocument();
     });
+  });
+
+  it.each(['manager', 'founder'])('allows a %s to open the shared field-acceptance route', async (role) => {
+    const am = await authedManager(role);
+    renderApp(am, '/field-acceptance');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Field acceptance rehearsal' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('link', { name: 'Field acceptance' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it.each(['/field-acceptance', '/field-acceptance/', '/FIELD-ACCEPTANCE'])(
+    'isolates the field-acceptance route variant %s from retry, reference-data, and protected network actions',
+    async (path) => {
+      const fetchMock = vi.fn(async () => {
+        throw new Error('The read-only field-acceptance route must not fetch');
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const am = await authedManager('manager');
+      renderApp(am, path);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Field acceptance rehearsal' })).toBeInTheDocument();
+      });
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(screen.queryByRole('button', { name: /retry sync/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /refresh data/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: /sync status/i })).not.toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('excludes the facilitator and redirects direct access to facilitator home', async () => {
+    const am = await authedManager('facilitator');
+    renderApp(am, '/field-acceptance');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Attendance & Sessions' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('heading', { name: 'Field acceptance rehearsal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Field acceptance' })).not.toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: /primary/i });
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Attendance & Sessions',
+      'Learners',
+      'Metrics Entry',
+    ]);
   });
 
   it('logging out returns to the login screen and hides role nav (Req 1.6, 2.3)', async () => {
