@@ -107,26 +107,26 @@ Automated release and read-only database evidence — completed by Kiro against
       and database least-privilege contract. No new repository migration exists
       through `7b9a5ea`; the schema remains migrations 001–010. This establishes
       the current accepted state without claiming a historical audit trail.
-- [x] The operator has the approved `Loyiso` and second seeded-role
-      password-manager entries. — The founder previously confirmed the Aya
-      credential was saved without sharing its value. The Rotate Live Founder
-      Password workflow succeeded
-      ([run 32766576106](https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32766576106),
-      2026-08-24), and current-release API role verification run 32890655986
-      authenticated founder, manager and facilitator. No credential, token or
-      roster data was logged or copied into this record, chat, a screenshot or
-      a workflow input.
+- [ ] The operator has the approved `Loyiso` and second seeded-role
+      password-manager entries. — Loyiso authenticated successfully on the
+      physical lounge device, manager navigation appeared, and logout cleared
+      the protected screen. Aya's saved password-manager values were rejected
+      by the live PWA on 2026-08-25, so practical founder credential
+      availability is **not confirmed**. Recovery was deliberately deferred;
+      no password was copied into this record, chat, a screenshot, or a
+      workflow input. Historical automation remains non-secret evidence only:
+      Rotate Live Founder Password
+      [run 32766576106](https://github.com/FunHouseDigital/FunHouse-LMS/actions/runs/32766576106)
+      succeeded on 2026-08-24, and role verification run 32890655986
+      authenticated its opaque GitHub-held founder secret.
 
-**Prerequisite result:** **PASS** for release `7b9a5ea`. Exact-release
-automated evidence is green, the seeded credentials are ready, Security Advisor
-reports 0 errors and 0 warnings, and the fresh post-Advisor database preflight
-passed. The founder's uncertainty was resolved through the checklist's required
-read-only rerun rather than an unsupported historical claim. Freeze development
-and production database administration on this candidate until the physical
-rehearsal and gate decision are complete.
-
-The security prerequisite now passes, but real learner data and Phase 2 remain
-prohibited until the physical rehearsal and final gate decision also pass.
+**Prerequisite result:** **BLOCKED** for release `7b9a5ea`. Exact-release
+automated evidence, Security Advisor, and the fresh post-Advisor database
+preflight are green, but the required separate usable Aya password-manager
+entry failed the physical login check. Real learner data, final GO, and Phase 2
+remain prohibited until founder access is safely recovered and the full
+physical rehearsal passes. The recovery operation is deferred by founder
+decision; do not keep guessing passwords.
 
 ## 2. Physical-device install, upgrade and role transition
 
@@ -134,20 +134,28 @@ Completed on the lounge device by the operator — see checklist Section 2.
 
 ### 2.1 Install and launch
 
-- [ ] Installation or Add to Home Screen was available.
-- [ ] Launch from the installed icon succeeded.
-- [ ] Visible Release matched the candidate SHA (`7b9a5ea`).
-- [ ] Close and relaunch succeeded with the same Release.
+- [x] Installation or Add to Home Screen was available. — On a clean Huawei
+      Nova 14 Chrome installation, the option appeared after Chrome was updated.
+- [x] Launch from the installed icon succeeded.
+- [x] Visible Release matched the candidate SHA (`7b9a5ea`).
+- [x] Close and relaunch succeeded with the same Release.
 
 ### 2.2 Existing-app upgrade and seeded-role transition
 
-- [ ] Existing app upgraded to the visible candidate Release (or **N/A** if the
-      rollout has no earlier installation).
+- [x] Existing app upgraded to the visible candidate Release. — A previously
+      installed device moved from `0b6df3d` to `7b9a5ea`, then retained
+      `7b9a5ea` after another full close and installed-icon relaunch.
 - [ ] Manager → signed-out → founder → signed-out → manager transitions showed
-      only the current role's navigation.
-- [ ] No protected screen remained visible between accounts.
+      only the current role's navigation. — Loyiso login, manager navigation,
+      and clean logout passed. Aya login failed because no available
+      password-manager value was accepted; credential recovery is deferred.
+- [ ] No protected screen remained visible between accounts. — The Loyiso
+      logout boundary was clear, but the complete cross-account sequence could
+      not run without founder access.
 
-**Install, upgrade and role-transition result:** PASS / FAIL — [operator]
+**Install, upgrade and role-transition result:** **FAIL / BLOCKED** — founder
+login unavailable; recovery deferred. Preserve state and restart this section
+after safe credential rotation and verification.
 
 ## 3. Five-session offline durability rehearsal
 
