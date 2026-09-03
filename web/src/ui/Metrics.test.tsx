@@ -1,8 +1,9 @@
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../state/authState';
+import { ReferenceDataProvider } from '../state/referenceDataState';
 import { SyncStatusProvider } from '../state/syncState';
 import { ServicesProvider } from '../state/servicesState';
 import { Metrics } from './Metrics';
@@ -56,27 +57,32 @@ const PLAYER: PlayerOut = {
 async function renderMetrics() {
   const am = new AuthManager({ loginFn: async () => founderResponse() });
   await am.login('aya', 'secret');
-  render(
+  const owner = am.getLocalDataOwner()!;
+  await writeCachedRead<PlayerOut[]>(`players:${owner.scope}`, [PLAYER], owner);
+  const view = render(
     <AuthProvider authManager={am}>
-      <SyncStatusProvider>
+      <ReferenceDataProvider>
+        <SyncStatusProvider>
         <ServicesProvider scheduler={{ onEnqueue: async () => {} }}>
           <MemoryRouter>
             <Metrics />
           </MemoryRouter>
         </ServicesProvider>
-      </SyncStatusProvider>
+        </SyncStatusProvider>
+      </ReferenceDataProvider>
     </AuthProvider>,
   );
+  return { view, owner };
 }
 
 describe('Metrics screen (Req 15, D1 resolved)', () => {
   beforeEach(async () => {
     await resetDb();
     clearSessionKey();
-    await writeCachedRead<PlayerOut[]>('players', [PLAYER]);
   });
 
   afterEach(async () => {
+    cleanup();
     await closeDb();
   });
 
@@ -91,29 +97,31 @@ describe('Metrics screen (Req 15, D1 resolved)', () => {
     const user = userEvent.setup();
     await renderMetrics();
 
-    // Enter a valid WPM but pick no player → Save stays disabled.
-    const wpm = screen.getAllByLabelText(/^WPM /)[0];
+    const row = screen.getAllByRole('row')[1];
+    // Enter a valid WPM but pick no player → this row's Save stays disabled.
+    const wpm = within(row).getByLabelText(/^WPM /);
     await user.type(wpm, '55');
-    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
   it('saves a metric keyed on player_id as a live unsynced student_metrics action (Req 15.3, D1)', async () => {
     const user = userEvent.setup();
-    await renderMetrics();
+    const { owner } = await renderMetrics();
 
-    // Select the registered player in the first row.
-    const playerButton = (await screen.findAllByRole('button', { name: /Ada Lovelace/ }))[0];
+    const row = screen.getAllByRole('row')[1];
+    // Select the registered player in the same row used for entry/save.
+    const playerButton = await within(row).findByRole('button', { name: /Ada Lovelace/ });
     await user.click(playerButton);
 
     // Enter a non-negative WPM value.
-    await user.type(screen.getAllByLabelText(/^WPM /)[0], '55');
+    await user.type(within(row).getByLabelText(/^WPM /), '55');
 
-    const save = screen.getAllByRole('button', { name: 'Save' })[0];
+    const save = within(row).getByRole('button', { name: 'Save' });
     await waitFor(() => expect(save).toBeEnabled());
     await user.click(save);
 
     await waitFor(async () => {
-      const unsynced = await getActionsByStatus('unsynced');
+      const unsynced = await getActionsByStatus('unsynced', owner);
       const metric = unsynced.find((a) => a.entity === 'student_metrics');
       expect(metric).toBeDefined();
       expect(metric!.status).toBe('unsynced');

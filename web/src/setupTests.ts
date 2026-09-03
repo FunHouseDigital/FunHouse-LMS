@@ -17,3 +17,29 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     writable: true,
   });
 }
+
+
+import { activateOwnerDataKey } from './store/localStore';
+import { sha256Base64Url } from './domain/crypto';
+import type { LocalDataOwner } from './domain/types';
+
+/** Build a real test capability backed by the same durable non-extractable key store as production. */
+export async function activateTestOwner(
+  subject = 'test-subject',
+  scope?: string,
+  generation = 1,
+  isCurrent: () => boolean = () => true,
+): Promise<LocalDataOwner> {
+  const activated = await activateOwnerDataKey(subject);
+  const opaqueScope = scope ?? `v2:${await sha256Base64Url(JSON.stringify([
+    subject, 'manager', 'test-location', null,
+  ]))}`;
+  return Object.freeze({
+    subject,
+    scope: opaqueScope,
+    keyId: activated.keyId,
+    key: activated.key,
+    generation,
+    isCurrent,
+  });
+}

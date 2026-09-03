@@ -11,7 +11,6 @@ import { DB_NAME, closeDb, enqueueAction } from '../store/localStore';
 import { PlayerDetail } from './PlayerDetail';
 
 const PLAYER_ID = 'player-1';
-const CACHE_SCOPE = 'v1:manager-1:manager:loc-1:no-school';
 
 function makeJwt(claims: Record<string, unknown>): string {
   const b64url = (obj: unknown) =>
@@ -63,11 +62,16 @@ function makeClient(getPlayerHistory: () => Promise<PlayerHistory>): ContainerAp
   } as unknown as ContainerApiClient;
 }
 
-async function renderDetail(client: ContainerApiClient) {
+async function authenticatedManager(): Promise<AuthManager> {
   const authManager = new AuthManager({ loginFn: async () => managerResponse() });
   await authManager.login('manager', 'secret');
+  return authManager;
+}
+
+async function renderDetail(client: ContainerApiClient, authManager?: AuthManager) {
+  const manager = authManager ?? await authenticatedManager();
   return render(
-    <AuthProvider authManager={authManager} client={client}>
+    <AuthProvider authManager={manager} client={client}>
       <ReferenceDataProvider>
         <MemoryRouter initialEntries={[`/players/${PLAYER_ID}`]}>
           <Routes>
@@ -153,6 +157,8 @@ describe('Player detail history', () => {
   });
 
   it('keeps scoped local rows marked with data-local and a visible Pending sync badge', async () => {
+    const authManager = await authenticatedManager();
+    const owner = authManager.getLocalDataOwner()!;
     await enqueueAction(
       {
         client_id: 'local-session',
@@ -166,7 +172,7 @@ describe('Player detail history', () => {
           started_at: '2025-01-11T09:00:00.000Z',
         },
       },
-      { scope: CACHE_SCOPE },
+      { owner },
     );
     await enqueueAction(
       {
@@ -180,7 +186,7 @@ describe('Player detail history', () => {
           paid_at: '2025-01-11T09:30:00.000Z',
         },
       },
-      { scope: CACHE_SCOPE },
+      { owner },
     );
     await enqueueAction(
       {
@@ -194,10 +200,10 @@ describe('Player detail history', () => {
           client_timestamp: '2025-01-11T09:31:00.000Z',
         },
       },
-      { scope: CACHE_SCOPE },
+      { owner },
     );
 
-    await renderDetail(makeClient(async () => emptyHistory()));
+    await renderDetail(makeClient(async () => emptyHistory()), authManager);
 
     await screen.findByRole('heading', { name: 'Sessions (1)' });
     for (const name of ['Sessions', 'Payments', 'Entitlement draws']) {
@@ -245,6 +251,8 @@ describe('Player detail history', () => {
   });
 
   it('keeps local unsynced rows visible when the server history request rejects', async () => {
+    const authManager = await authenticatedManager();
+    const owner = authManager.getLocalDataOwner()!;
     await enqueueAction(
       {
         client_id: 'offline-payment',
@@ -257,10 +265,10 @@ describe('Player detail history', () => {
           paid_at: '2025-01-12T09:30:00.000Z',
         },
       },
-      { scope: CACHE_SCOPE },
+      { owner },
     );
 
-    await renderDetail(makeClient(async () => Promise.reject(new Error('offline'))));
+    await renderDetail(makeClient(async () => Promise.reject(new Error('offline'))), authManager);
 
     expect(
       await screen.findByText(

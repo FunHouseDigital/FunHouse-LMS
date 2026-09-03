@@ -61,6 +61,8 @@ export function SyncStatusSurface() {
     primary = `Offline — ${unsyncedCount} ${unsyncedCount === 1 ? 'item is' : 'items are'} saved on this device and will sync when connected.`;
   } else if (!loading && unsyncedCount > 0) {
     primary = `${unsyncedCount} ${unsyncedCount === 1 ? 'item is' : 'items are'} waiting to sync.`;
+  } else if (!loading && quarantinedCount > 0) {
+    primary = `${quarantinedCount} older offline ${quarantinedCount === 1 ? 'item is' : 'items are'} quarantined and not synced.`;
   }
 
   return (

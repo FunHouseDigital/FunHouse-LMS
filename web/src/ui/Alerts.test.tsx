@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { AuthProvider } from '../state/authState';
+import { AuthProvider, useAuth } from '../state/authState';
 import { ReferenceDataProvider } from '../state/referenceDataState';
 import { AuthManager } from '../domain/authManager';
 import { Alerts as AlertsScreen } from './Alerts';
-import { DB_NAME, closeDb, getCachedRead, writeCachedRead } from '../store/localStore';
+import { DB_NAME, closeDb, getCachedRead, getDb, writeCachedRead } from '../store/localStore';
 import { alertsCacheKey } from '../domain/alerts';
 import type { ContainerApiClient } from '../api/client';
 import type { Alert, LoginResponse } from '../domain/types';
@@ -23,8 +23,6 @@ async function resetDb(): Promise<void> {
 function setOnline(value: boolean): void {
   Object.defineProperty(navigator, 'onLine', { configurable: true, value });
 }
-
-const CACHE_SCOPE = 'v1:founder-1:founder:loc-1:no-school';
 
 function makeJwt(claims: Record<string, unknown>): string {
   const b64url = (obj: unknown) =>
@@ -66,11 +64,16 @@ function makeClient(opts: { alerts?: Alert[]; fail?: boolean }): ContainerApiCli
   } as unknown as ContainerApiClient;
 }
 
-async function renderAlerts(client: ContainerApiClient) {
+async function authenticatedManager(): Promise<AuthManager> {
   const authManager = new AuthManager({ loginFn: async () => loginResponse() });
   await authManager.login('founder', 'secret');
-  return render(
-    <AuthProvider authManager={authManager} client={client}>
+  return authManager;
+}
+
+async function renderAlerts(client: ContainerApiClient, authManager?: AuthManager) {
+  const manager = authManager ?? await authenticatedManager();
+  const view = render(
+    <AuthProvider authManager={manager} client={client}>
       <ReferenceDataProvider>
         <MemoryRouter>
           <AlertsScreen />
@@ -78,6 +81,14 @@ async function renderAlerts(client: ContainerApiClient) {
       </ReferenceDataProvider>
     </AuthProvider>,
   );
+  return { view, owner: manager.getLocalDataOwner()! };
+}
+
+let replaceLogin: ((identifier: string, password: string) => Promise<unknown>) | null = null;
+function AlertsWithLoginHandle() {
+  const { login } = useAuth();
+  replaceLogin = login;
+  return <AlertsScreen />;
 }
 
 describe('Alerts view (Req 16)', () => {
@@ -90,7 +101,7 @@ describe('Alerts view (Req 16)', () => {
 
   it('renders each alert type and subject from GET /alerts (Req 16.1, 16.2)', async () => {
     const client = makeClient({ alerts: ALERTS });
-    await renderAlerts(client);
+    const { owner } = await renderAlerts(client);
 
     const list = await screen.findByRole('list', { name: /operational alerts/i });
     const items = within(list).getAllByRole('listitem');
@@ -105,20 +116,53 @@ describe('Alerts view (Req 16)', () => {
 
     // The fetched alerts are cached for offline use (Req 16.3).
     await waitFor(async () => {
-      expect(await getCachedRead(alertsCacheKey(CACHE_SCOPE))).toBeTruthy();
+      expect(await getCachedRead(alertsCacheKey(owner.scope), owner)).toBeTruthy();
     });
   });
 
   it('renders the last cached alerts with a cached indicator when offline (Req 16.3)', async () => {
-    await writeCachedRead(alertsCacheKey(CACHE_SCOPE), ALERTS);
+    const authManager = await authenticatedManager();
+    const owner = authManager.getLocalDataOwner()!;
+    await writeCachedRead(alertsCacheKey(owner.scope), ALERTS, owner);
     setOnline(false);
 
     const client = makeClient({ fail: true }); // must not be reached offline
-    await renderAlerts(client);
+    await renderAlerts(client, authManager);
 
     expect(await screen.findByText(/showing cached data/i)).toBeInTheDocument();
     const list = await screen.findByRole('list', { name: /operational alerts/i });
     expect(within(list).getAllByRole('listitem')).toHaveLength(4);
+  });
+
+  it('withholds old plaintext and rejects an old request cache write after same-scope replacement', async () => {
+    const manager = await authenticatedManager();
+    const oldOwner = manager.getLocalDataOwner()!;
+    let resolveFirst!: (alerts: Alert[]) => void;
+    let calls = 0;
+    const client = makeClient({ alerts: [] });
+    client.getAlerts = vi.fn(() => {
+      calls += 1;
+      return calls === 1
+        ? new Promise<Alert[]>((resolve) => { resolveFirst = resolve; })
+        : Promise.resolve([]);
+    });
+
+    render(
+      <AuthProvider authManager={manager} client={client}>
+        <ReferenceDataProvider>
+          <MemoryRouter><AlertsWithLoginHandle /></MemoryRouter>
+        </ReferenceDataProvider>
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(client.getAlerts).toHaveBeenCalledTimes(1));
+
+    await act(async () => { await replaceLogin!('founder', 'replacement-password'); });
+    expect(oldOwner.isCurrent()).toBe(false);
+    await act(async () => { resolveFirst(ALERTS); });
+
+    await waitFor(() => expect(screen.queryByText('No visit in 8 days')).not.toBeInTheDocument());
+    const raw = JSON.stringify(await (await getDb()).getAll('cached_reads'));
+    expect(raw).not.toContain('No visit in 8 days');
   });
 
   it('shows an empty state when there are no alerts', async () => {

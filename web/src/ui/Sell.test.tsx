@@ -18,10 +18,6 @@ import {
 } from '../store/localStore';
 import { Sell } from './Sell';
 
-const CACHE_SCOPE = 'v1:manager-1:manager:loc-1:no-school';
-const PLAYERS_KEY = `players:${CACHE_SCOPE}`;
-const PRODUCTS_KEY = `products:${CACHE_SCOPE}`;
-
 const PLAYER: PlayerOut = {
   id: 'player-1',
   first_name: 'Ada',
@@ -85,12 +81,13 @@ function makeClient(products: ProductOut[], players: PlayerOut[] = [PLAYER]): Co
 }
 
 async function renderSell(products: ProductOut[], players: PlayerOut[] = [PLAYER]) {
-  await writeCachedRead(PLAYERS_KEY, players);
-  await writeCachedRead(PRODUCTS_KEY, products);
   const authManager = new AuthManager({ loginFn: async () => managerResponse() });
   await authManager.login('manager', 'secret');
+  const owner = authManager.getLocalDataOwner()!;
+  await writeCachedRead(`players:${owner.scope}`, players, owner);
+  await writeCachedRead(`products:${owner.scope}`, products, owner);
 
-  return render(
+  const view = render(
     <AuthProvider authManager={authManager} client={makeClient(products, players)}>
       <ReferenceDataProvider>
         <SyncStatusProvider>
@@ -103,6 +100,7 @@ async function renderSell(products: ProductOut[], players: PlayerOut[] = [PLAYER
       </ReferenceDataProvider>
     </AuthProvider>,
   );
+  return { view, owner };
 }
 
 async function selectPlayer(user: ReturnType<typeof userEvent.setup>): Promise<void> {
@@ -134,7 +132,7 @@ describe('Sell screen catalog prices', () => {
       price_cents: 25_000,
     });
     const user = userEvent.setup();
-    await renderSell([unrelated, holiday]);
+    const { owner } = await renderSell([unrelated, holiday]);
 
     const holidayRadio = screen.getByRole('radio', { name: /Holiday Special/ });
     await user.click(holidayRadio);
@@ -147,7 +145,7 @@ describe('Sell screen catalog prices', () => {
     await user.click(complete);
 
     await waitFor(async () => {
-      const payments = await getAllLocalRecords('payments', CACHE_SCOPE);
+      const payments = await getAllLocalRecords('payments', owner);
       expect(payments).toHaveLength(1);
       expect(payments[0]).toMatchObject({
         amount_cents: 25_000,
@@ -224,7 +222,7 @@ describe('Sell screen catalog prices', () => {
 
   it('accepts any finite positive cached subscription price and records that catalog amount', async () => {
     const user = userEvent.setup();
-    await renderSell([
+    const { owner } = await renderSell([
       product({
         id: 'subscription-flexible',
         name: 'Subscription',
@@ -243,7 +241,7 @@ describe('Sell screen catalog prices', () => {
     await user.click(complete);
 
     await waitFor(async () => {
-      const payments = await getAllLocalRecords('payments', CACHE_SCOPE);
+      const payments = await getAllLocalRecords('payments', owner);
       expect(payments[0]).toMatchObject({
         amount_cents: 12_345,
         product_id: 'subscription-flexible',
@@ -274,7 +272,7 @@ describe('Sell screen catalog prices', () => {
 
   it('keeps blank pay-per-use disabled and records a valid decimal Rand value as integer cents', async () => {
     const user = userEvent.setup();
-    await renderSell([]);
+    const { owner } = await renderSell([]);
     await selectPlayer(user);
 
     const complete = screen.getByRole('button', { name: 'Complete sale' });
@@ -288,7 +286,7 @@ describe('Sell screen catalog prices', () => {
 
     expect(await screen.findByRole('status', { name: '' })).toHaveTextContent('Sale recorded');
     await waitFor(async () => {
-      const payments = await getAllLocalRecords('payments', CACHE_SCOPE);
+      const payments = await getAllLocalRecords('payments', owner);
       expect(payments).toHaveLength(1);
       expect(payments[0].amount_cents).toBe(1_234);
     });

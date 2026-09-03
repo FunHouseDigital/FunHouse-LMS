@@ -52,7 +52,7 @@ describe('ContainerApiClient bearer attachment (Req 1.5)', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt-token-123');
   });
 
-  it('omits the Authorization header when no token is available', async () => {
+  it('rejects protected requests locally when no token is available', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(200, []));
     const client = new ContainerApiClient({
       baseUrl: 'https://api.funhouse.example',
@@ -60,10 +60,8 @@ describe('ContainerApiClient bearer attachment (Req 1.5)', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
-    await client.getAlerts();
-
-    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+    await expect(client.getAlerts()).rejects.toBeInstanceOf(UnauthorizedError);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('sends the login request body without requiring a token', async () => {
@@ -133,6 +131,7 @@ describe('ContainerApiClient 401 surfacing (Req 1.7)', () => {
     const fetchImpl = vi.fn(async () => jsonResponse(500, { detail: 'boom' }));
     const client = new ContainerApiClient({
       baseUrl: 'https://api.funhouse.example',
+      getToken: () => 'tok',
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 

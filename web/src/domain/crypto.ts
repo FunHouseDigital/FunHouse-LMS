@@ -28,7 +28,7 @@
  * vitest/jsdom the same global `crypto.subtle` is present; `setupTests.ts`
  * additionally polyfills it from `node:crypto` if a runtime ever lacks it.
  */
-import type { EncryptedField } from './types';
+import type { EncryptedEnvelope, EncryptedField } from './types';
 
 const PBKDF2_ITERATIONS = 100_000;
 const IV_LENGTH_BYTES = 12; // 96-bit IV for AES-GCM
@@ -52,6 +52,17 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+}
+
+/** Stable URL-safe SHA-256 identifier; input material is never persisted. */
+export async function sha256Base64Url(value: string): Promise<string> {
+  const digest = new Uint8Array(
+    await getSubtle().digest('SHA-256', buf(new TextEncoder().encode(value))),
+  );
+  return bytesToBase64(digest)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -106,13 +117,31 @@ export async function deriveKey(secret: string, saltB64: string): Promise<Crypto
   );
 }
 
-/** Encrypt a UTF-8 string to an `EncryptedField` with a fresh random 96-bit IV. */
-export async function encrypt(key: CryptoKey, plaintext: string): Promise<EncryptedField> {
+/** Generate a persistent, random, non-extractable AES-GCM owner-data key. */
+export async function generateDataKey(): Promise<CryptoKey> {
+  return getSubtle().generateKey(
+    { name: 'AES-GCM', length: AES_KEY_LENGTH_BITS },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+function aadBytes(aad?: string): BufferSource | undefined {
+  return aad === undefined ? undefined : buf(new TextEncoder().encode(aad));
+}
+
+/** Encrypt a UTF-8 string with a fresh random 96-bit IV and optional AAD. */
+export async function encrypt(
+  key: CryptoKey,
+  plaintext: string,
+  aad?: string,
+): Promise<EncryptedField> {
   const subtle = getSubtle();
   const iv = new Uint8Array(IV_LENGTH_BYTES);
   globalThis.crypto.getRandomValues(iv);
+  const additionalData = aadBytes(aad);
   const ciphertext = await subtle.encrypt(
-    { name: 'AES-GCM', iv: buf(iv) },
+    { name: 'AES-GCM', iv: buf(iv), ...(additionalData ? { additionalData } : {}) },
     key,
     buf(new TextEncoder().encode(plaintext)),
   );
@@ -122,28 +151,71 @@ export async function encrypt(key: CryptoKey, plaintext: string): Promise<Encryp
   };
 }
 
-/** Decrypt an `EncryptedField` back to its UTF-8 string. */
-export async function decrypt(key: CryptoKey, field: EncryptedField): Promise<string> {
+/** Decrypt an AES-GCM field using the same optional AAD. */
+export async function decrypt(
+  key: CryptoKey,
+  field: EncryptedField,
+  aad?: string,
+): Promise<string> {
   const subtle = getSubtle();
+  const additionalData = aadBytes(aad);
   const plaintext = await subtle.decrypt(
-    { name: 'AES-GCM', iv: buf(base64ToBytes(field.iv)) },
+    {
+      name: 'AES-GCM',
+      iv: buf(base64ToBytes(field.iv)),
+      ...(additionalData ? { additionalData } : {}),
+    },
     key,
     buf(base64ToBytes(field.ciphertext)),
   );
   return new TextDecoder().decode(plaintext);
 }
 
-/** Encrypt an arbitrary personal-data payload (JSON) before a Local_Store write. */
-export async function encryptPayload(key: CryptoKey, payload: unknown): Promise<EncryptedField> {
-  return encrypt(key, JSON.stringify(payload));
+/** Encrypt JSON. Existing session callers remain compatible when AAD is omitted. */
+export async function encryptPayload(
+  key: CryptoKey,
+  payload: unknown,
+  aad?: string,
+): Promise<EncryptedField> {
+  return encrypt(key, JSON.stringify(payload), aad);
 }
 
-/** Decrypt a personal-data payload read from the Local_Store. */
+/** Decrypt JSON. Missing/corrupt/wrong-key/AAD input rejects fail-closed. */
 export async function decryptPayload<T = unknown>(
   key: CryptoKey,
   field: EncryptedField,
+  aad?: string,
 ): Promise<T> {
-  return JSON.parse(await decrypt(key, field)) as T;
+  return JSON.parse(await decrypt(key, field, aad)) as T;
+}
+
+/** Encrypt JSON into a versioned owner-data envelope. */
+export async function encryptEnvelope(
+  key: CryptoKey,
+  keyId: string,
+  payload: unknown,
+  aad: string,
+  revision = 1,
+): Promise<EncryptedEnvelope> {
+  const field = await encryptPayload(key, payload, aad);
+  return { version: 1, key_id: keyId, revision, ...field };
+}
+
+/** Decrypt and validate a versioned owner-data envelope. */
+export async function decryptEnvelope<T>(
+  key: CryptoKey,
+  expectedKeyId: string,
+  envelope: EncryptedEnvelope,
+  aad: string,
+): Promise<T> {
+  if (
+    envelope.version !== 1 ||
+    envelope.revision < 1 ||
+    envelope.key_id !== expectedKeyId
+  ) {
+    throw new Error('Encrypted local data uses an unavailable key or envelope version');
+  }
+  return decryptPayload<T>(key, envelope, aad);
 }
 
 // ---- Active in-memory handle to the persistently cloned session key ----

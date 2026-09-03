@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSyncStatus } from '../state/syncState';
 import { useReferenceData } from '../state/referenceDataState';
 import { getAllLocalRecords, type LocalRecord } from '../store/localStore';
+import { localDataLifecycleIdentity } from '../domain/personalData';
 import {
   MONTHLY_PACE_TARGET_RAND,
   computeTodayTotals,
@@ -25,22 +26,31 @@ function todayIso(): string {
 
 export function Today() {
   const { unsyncedCount } = useSyncStatus();
-  const { cacheScope } = useReferenceData();
-  const [totals, setTotals] = useState<TodayTotals>({ cashTotalCents: 0, sessionCount: 0 });
+  const { cacheScope, owner } = useReferenceData();
+  const identity = localDataLifecycleIdentity(owner);
+  const [snapshot, setSnapshot] = useState<{ identity: string | null; totals: TodayTotals }>({
+    identity: null,
+    totals: { cashTotalCents: 0, sessionCount: 0 },
+  });
   const day = useMemo(() => todayIso(), []);
 
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const payments: LocalRecord[] = await getAllLocalRecords('payments', cacheScope);
-      const sessions: LocalRecord[] = await getAllLocalRecords('sessions', cacheScope);
+      if (!owner) return;
+      const payments: LocalRecord[] = await getAllLocalRecords('payments', owner);
+      const sessions: LocalRecord[] = await getAllLocalRecords('sessions', owner);
       const next = computeTodayTotals(payments, sessions, day);
-      if (alive) setTotals(next);
+      if (alive && owner.isCurrent()) setSnapshot({ identity, totals: next });
     })();
     return () => {
       alive = false;
     };
-  }, [cacheScope, day, unsyncedCount]);
+  }, [cacheScope, day, identity, owner, unsyncedCount]);
+
+  const totals = snapshot.identity === identity && owner?.isCurrent()
+    ? snapshot.totals
+    : { cashTotalCents: 0, sessionCount: 0 };
 
   const pace = paceFraction(totals.cashTotalCents);
 

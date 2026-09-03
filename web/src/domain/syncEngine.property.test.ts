@@ -9,7 +9,8 @@ import {
   getActionsByStatus,
   countUnsynced,
 } from '../store/localStore';
-import type { ActionResult, EntityType, SyncAction, SyncResult } from './types';
+import type { ActionResult, EntityType, LocalDataOwner, SyncAction, SyncResult } from './types';
+import { activateTestOwner } from '../setupTests';
 
 /** Drop the database so each property run starts from a clean slate. */
 async function resetDb(): Promise<void> {
@@ -47,13 +48,21 @@ function makeMock(handler: (actions: SyncAction[]) => SyncResult | Promise<SyncR
   return { batches, client };
 }
 
+function ownedEngine(client: ReturnType<typeof makeMock>['client'], owner: LocalDataOwner): SyncEngine {
+  return new SyncEngine({
+    client,
+    getOwner: () => owner,
+    isOwnerCurrent: (candidate) => candidate === owner,
+  });
+}
+
 interface RawAction {
   created_at: string;
   entity: EntityType;
 }
 
 /** Enqueue index-keyed actions (unique client_ids, no player refs → no D2 deferral). */
-async function enqueueAll(raws: RawAction[]): Promise<SyncAction[]> {
+async function enqueueAll(raws: RawAction[], owner: LocalDataOwner): Promise<SyncAction[]> {
   const actions: SyncAction[] = raws.map((r, i) => ({
     client_id: `a-${i}`,
     entity: r.entity,
@@ -61,7 +70,7 @@ async function enqueueAll(raws: RawAction[]): Promise<SyncAction[]> {
     payload: { v: i },
   }));
   for (const action of actions) {
-    await enqueueAction(action);
+    await enqueueAction(action, { owner });
   }
   return actions;
 }
@@ -87,7 +96,8 @@ describe('Sync_Engine flush() — reconcile properties', () => {
         ),
         async (raws) => {
           await resetDb();
-          await enqueueAll(raws);
+          const owner = await activateTestOwner();
+          await enqueueAll(raws, owner);
           const terminal = new Map<string, 'applied' | 'skipped'>();
           raws.forEach((r, i) => {
             if (r.terminal) terminal.set(`a-${i}`, r.skipped ? 'skipped' : 'applied');
@@ -104,11 +114,11 @@ describe('Sync_Engine flush() — reconcile properties', () => {
                 reason: null,
               })),
           }));
-          const engine = new SyncEngine({ client: mock.client });
+          const engine = ownedEngine(mock.client, owner);
 
           await engine.flush();
           const terminalAfter1 = new Set(
-            [...(await getActionsByStatus('applied')), ...(await getActionsByStatus('skipped'))].map(
+            [...(await getActionsByStatus('applied', owner)), ...(await getActionsByStatus('skipped', owner))].map(
               (a) => a.client_id,
             ),
           );
@@ -127,7 +137,7 @@ describe('Sync_Engine flush() — reconcile properties', () => {
 
           // Reconcile is idempotent: terminal set is unchanged after a second flush.
           const terminalAfter2 = new Set(
-            [...(await getActionsByStatus('applied')), ...(await getActionsByStatus('skipped'))].map(
+            [...(await getActionsByStatus('applied', owner)), ...(await getActionsByStatus('skipped', owner))].map(
               (a) => a.client_id,
             ),
           );
@@ -154,7 +164,8 @@ describe('Sync_Engine flush() — reconcile properties', () => {
         }),
         async (raws) => {
           await resetDb();
-          const actions = await enqueueAll(raws);
+          const owner = await activateTestOwner();
+          const actions = await enqueueAll(raws, owner);
           const original = new Map(actions.map((a) => [a.client_id, a.created_at]));
 
           // First attempt fails at the transport (network error) → retain queue.
@@ -174,7 +185,7 @@ describe('Sync_Engine flush() — reconcile properties', () => {
               })),
             };
           });
-          const engine = new SyncEngine({ client: mock.client });
+          const engine = ownedEngine(mock.client, owner);
 
           const r1 = await engine.flush(); // network error, queue retained
           expect(r1.outcome).toBe('network-error');
@@ -220,7 +231,8 @@ describe('Sync_Engine flush() — reconcile properties', () => {
         ),
         async (raws) => {
           await resetDb();
-          await enqueueAll(raws);
+          const owner = await activateTestOwner();
+          await enqueueAll(raws, owner);
 
           const results: ActionResult[] = raws
             .map((r, i) => ({
@@ -236,11 +248,11 @@ describe('Sync_Engine flush() — reconcile properties', () => {
             .map(({ sortKey: _sortKey, ...rest }) => rest);
 
           const mock = makeMock(() => ({ results }));
-          const engine = new SyncEngine({ client: mock.client });
+          const engine = ownedEngine(mock.client, owner);
           await engine.flush();
 
           for (let i = 0; i < raws.length; i++) {
-            const stored = await getAction(`a-${i}`);
+            const stored = await getAction(`a-${i}`, owner);
             expect(stored).toBeDefined();
             if (raws[i].status === 'rejected') {
               expect(stored!.status).toBe('rejected');
@@ -251,11 +263,11 @@ describe('Sync_Engine flush() — reconcile properties', () => {
           }
 
           // Terminal actions are gone from the unsynced set; rejected are retained.
-          const unsynced = new Set((await getActionsByStatus('unsynced')).map((a) => a.client_id));
+          const unsynced = new Set((await getActionsByStatus('unsynced', owner)).map((a) => a.client_id));
           raws.forEach((_r, i) => {
             expect(unsynced.has(`a-${i}`)).toBe(false);
           });
-          const rejected = await getActionsByStatus('rejected');
+          const rejected = await getActionsByStatus('rejected', owner);
           expect(rejected.length).toBe(raws.filter((r) => r.status === 'rejected').length);
           return true;
         },
@@ -275,15 +287,16 @@ describe('Sync_Engine flush() — reconcile properties', () => {
         fc.array(fc.record({ created_at: isoArb, entity: entityArb }), { maxLength: 15 }),
         async (raws) => {
           await resetDb();
-          await enqueueAll(raws);
+          const owner = await activateTestOwner();
+          await enqueueAll(raws, owner);
 
-          const before = (await getActionsByStatus('unsynced')).map((a) => a.client_id).sort();
-          const countBefore = await countUnsynced();
+          const before = (await getActionsByStatus('unsynced', owner)).map((a) => a.client_id).sort();
+          const countBefore = await countUnsynced(owner);
 
           const mock = makeMock(() => {
             throw new Error('offline');
           });
-          const engine = new SyncEngine({ client: mock.client });
+          const engine = ownedEngine(mock.client, owner);
           const result = await engine.flush();
 
           if (raws.length === 0) {
@@ -292,9 +305,9 @@ describe('Sync_Engine flush() — reconcile properties', () => {
             expect(result.outcome).toBe('network-error');
           }
 
-          const after = (await getActionsByStatus('unsynced')).map((a) => a.client_id).sort();
+          const after = (await getActionsByStatus('unsynced', owner)).map((a) => a.client_id).sort();
           expect(after).toEqual(before);
-          expect(await countUnsynced()).toBe(countBefore);
+          expect(await countUnsynced(owner)).toBe(countBefore);
           return true;
         },
       ),

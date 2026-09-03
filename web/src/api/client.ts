@@ -129,6 +129,11 @@ export class ContainerApiClient {
     const authSnapshot = protectedRequest
       ? Object.freeze({ ...this.getAuthSnapshot() })
       : null;
+    if (protectedRequest && authSnapshot?.token == null) {
+      // Fail before headers/body serialization or fetch so protected payloads
+      // can never leave the device without the captured bearer token.
+      throw new UnauthorizedError('Authentication required');
+    }
     if (authSnapshot?.token) {
       headers.Authorization = `Bearer ${authSnapshot.token}`;
     }

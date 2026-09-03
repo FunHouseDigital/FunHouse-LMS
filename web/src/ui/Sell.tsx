@@ -76,7 +76,7 @@ function parseRandToCents(value: string): number | null {
 
 export function Sell() {
   const { commit } = useServices();
-  const { revision, productsCacheKey } = useReferenceData();
+  const { revision, productsCacheKey, owner } = useReferenceData();
   const {
     players,
     loaded: playersLoaded,
@@ -92,13 +92,14 @@ export function Sell() {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const cachedProducts = await getCachedRead<ProductOut[]>(productsCacheKey);
+      if (!owner) return;
+      const cachedProducts = await getCachedRead<ProductOut[]>(productsCacheKey, owner);
       if (alive) setProducts(cachedProducts?.data ?? []);
     })();
     return () => {
       alive = false;
     };
-  }, [productsCacheKey, revision]);
+  }, [owner, productsCacheKey, revision]);
 
   const product = useMemo(() => matchProduct(products, kind), [products, kind]);
 

@@ -30,12 +30,13 @@ import {
   summariesEqual,
   type RevenuePeriod,
 } from '../domain/revenue';
+import { localDataLifecycleIdentity } from '../domain/personalData';
 import type { RevenueSummary } from '../domain/types';
 
 type LoadState = 'loading' | 'ready' | 'empty';
 
 interface RevenueView {
-  scope: string | null;
+  identity: string | null;
   summary: RevenueSummary | null;
   cached: boolean;
   state: LoadState;
@@ -48,16 +49,15 @@ function isOnline(): boolean {
 
 export function RevenueDashboard() {
   const { client } = useAuth();
-  const { cacheScope } = useReferenceData();
-  const activeScopeRef = useRef(cacheScope);
-  // Render updates this before passive-effect cleanup, closing the account-switch
-  // window between sequential D3 requests.
-  activeScopeRef.current = cacheScope;
+  const { cacheScope, owner } = useReferenceData();
+  const lifecycleIdentity = localDataLifecycleIdentity(owner);
+  const activeIdentityRef = useRef(lifecycleIdentity);
+  activeIdentityRef.current = lifecycleIdentity;
 
   const [period, setPeriod] = useState<RevenuePeriod>('monthly');
   const [location, setLocation] = useState('');
   const [view, setView] = useState<RevenueView>({
-    scope: null,
+    identity: null,
     summary: null,
     cached: false,
     state: 'loading',
@@ -70,16 +70,18 @@ export function RevenueDashboard() {
   const paramSupportKnown = storedParamSupport !== undefined;
 
   useEffect(() => {
-    if (!cacheScope) {
-      setView({ scope: null, summary: null, cached: false, state: 'empty' });
+    if (!cacheScope || !owner) {
+      setView({ identity: null, summary: null, cached: false, state: 'empty' });
       return undefined;
     }
 
     let alive = true;
     const requestScope = cacheScope;
+    const requestOwner = owner;
+    const requestIdentity = lifecycleIdentity;
     const defaultKey = defaultRevenueCacheKey(requestScope);
     const selectedKey = revenueCacheKey(requestScope, period, location);
-    const isCurrent = () => alive && activeScopeRef.current === requestScope;
+    const isCurrent = () => alive && requestOwner.isCurrent() && activeIdentityRef.current === requestIdentity;
     const rememberParamSupport = (ignored: boolean) => {
       setParamSupportByScope((current) => {
         const next = new Map(current);
@@ -91,7 +93,7 @@ export function RevenueDashboard() {
     function show(data: RevenueSummary, fromCache: boolean): void {
       if (!isCurrent()) return;
       setView({
-        scope: requestScope,
+        identity: requestIdentity,
         summary: data,
         cached: fromCache,
         state: 'ready',
@@ -99,11 +101,17 @@ export function RevenueDashboard() {
     }
 
     async function readFromCache(preferDefault: boolean): Promise<boolean> {
+      if (!isCurrent()) return true;
       const primaryKey = preferDefault ? defaultKey : selectedKey;
       const fallbackKey = preferDefault ? selectedKey : defaultKey;
-      const hit =
-        (await getCachedRead<RevenueSummary>(primaryKey)) ??
-        (await getCachedRead<RevenueSummary>(fallbackKey));
+      let hit;
+      try {
+        hit =
+          (await getCachedRead<RevenueSummary>(primaryKey, requestOwner)) ??
+          (await getCachedRead<RevenueSummary>(fallbackKey, requestOwner));
+      } catch {
+        return !isCurrent();
+      }
       if (!isCurrent()) return true;
       if (hit) {
         show(hit.data, true);
@@ -128,7 +136,7 @@ export function RevenueDashboard() {
       if (!isOnline()) {
         const found = await readFromCache(paramsIgnored);
         if (isCurrent() && !found) {
-          setView({ scope: requestScope, summary: null, cached: false, state: 'empty' });
+          setView({ identity: requestIdentity, summary: null, cached: false, state: 'empty' });
         }
         return;
       }
@@ -153,14 +161,15 @@ export function RevenueDashboard() {
         if (!isCurrent()) return;
 
         const key = ignored ? defaultKey : selectedKey;
-        await writeCachedRead(key, data);
+        await writeCachedRead(key, data, requestOwner);
         show(data, false);
       } catch {
+        if (!isCurrent()) return;
         // Fetch failed → D3 fallback within this account's namespace only.
         if (isCurrent()) rememberParamSupport(true);
         const found = await readFromCache(true);
         if (isCurrent() && !found) {
-          setView({ scope: requestScope, summary: null, cached: false, state: 'empty' });
+          setView({ identity: requestIdentity, summary: null, cached: false, state: 'empty' });
         }
       }
     })();
@@ -168,18 +177,18 @@ export function RevenueDashboard() {
     return () => {
       alive = false;
     };
-  }, [cacheScope, client, location, paramSupportKnown, paramsIgnored, period]);
+  }, [cacheScope, client, lifecycleIdentity, location, owner, paramSupportKnown, paramsIgnored, period]);
 
   // Do not render the prior account's financial state during the
   // render/effect boundary after an account change.
   const visible: RevenueView =
-    cacheScope && view.scope === cacheScope
+    lifecycleIdentity && view.identity === lifecycleIdentity && owner?.isCurrent()
       ? view
       : {
-          scope: cacheScope,
+          identity: lifecycleIdentity,
           summary: null,
           cached: false,
-          state: cacheScope ? 'loading' : 'empty',
+          state: lifecycleIdentity ? 'loading' : 'empty',
         };
   const { summary, cached, state } = visible;
   const rows = summary ? buildRevenueRows(summary) : [];

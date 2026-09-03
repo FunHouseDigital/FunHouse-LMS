@@ -15,12 +15,13 @@ import { useAuth } from '../state/authState';
 import { useReferenceData } from '../state/referenceDataState';
 import { getCachedRead, writeCachedRead } from '../store/localStore';
 import { alertsCacheKey, buildAlertRows, type AlertRow } from '../domain/alerts';
+import { localDataLifecycleIdentity } from '../domain/personalData';
 import type { Alert } from '../domain/types';
 
 type LoadState = 'loading' | 'ready' | 'empty';
 
 interface AlertsView {
-  scope: string | null;
+  identity: string | null;
   rows: AlertRow[];
   cached: boolean;
   state: LoadState;
@@ -32,28 +33,31 @@ function isOnline(): boolean {
 
 export function Alerts() {
   const { client } = useAuth();
-  const { cacheScope } = useReferenceData();
+  const { cacheScope, owner } = useReferenceData();
+  const lifecycleIdentity = localDataLifecycleIdentity(owner);
   const [view, setView] = useState<AlertsView>({
-    scope: null,
+    identity: null,
     rows: [],
     cached: false,
     state: 'loading',
   });
 
   useEffect(() => {
-    if (!cacheScope) {
-      setView({ scope: null, rows: [], cached: false, state: 'empty' });
+    if (!cacheScope || !owner) {
+      setView({ identity: null, rows: [], cached: false, state: 'empty' });
       return undefined;
     }
 
     let alive = true;
     const requestScope = cacheScope;
+    const requestOwner = owner;
+    const requestIdentity = lifecycleIdentity;
     const cacheKey = alertsCacheKey(requestScope);
 
     function show(alerts: Alert[], fromCache: boolean): void {
-      if (!alive) return;
+      if (!alive || !requestOwner.isCurrent()) return;
       setView({
-        scope: requestScope,
+        identity: requestIdentity,
         rows: buildAlertRows(alerts),
         cached: fromCache,
         state: alerts.length === 0 ? 'empty' : 'ready',
@@ -61,8 +65,14 @@ export function Alerts() {
     }
 
     async function readFromCache(): Promise<boolean> {
-      const hit = await getCachedRead<Alert[]>(cacheKey);
-      if (!alive) return true;
+      if (!requestOwner.isCurrent()) return true;
+      let hit;
+      try {
+        hit = await getCachedRead<Alert[]>(cacheKey, requestOwner);
+      } catch {
+        return !requestOwner.isCurrent();
+      }
+      if (!alive || !requestOwner.isCurrent()) return true;
       if (hit) {
         show(hit.data, true);
         return true;
@@ -75,7 +85,7 @@ export function Alerts() {
       if (!isOnline()) {
         const found = await readFromCache();
         if (alive && !found) {
-          setView({ scope: requestScope, rows: [], cached: false, state: 'empty' });
+          setView({ identity: requestIdentity, rows: [], cached: false, state: 'empty' });
         }
         return;
       }
@@ -84,13 +94,14 @@ export function Alerts() {
         const alerts = await client.getAlerts();
         // A replaced account may finish this write, but only under the scope
         // captured when its request began. It can never populate the new scope.
-        await writeCachedRead(cacheKey, alerts);
+        await writeCachedRead(cacheKey, alerts, requestOwner);
         show(alerts, false);
       } catch {
+        if (!requestOwner.isCurrent()) return;
         // Network failure → fall back only to this account's cached alerts.
         const found = await readFromCache();
         if (alive && !found) {
-          setView({ scope: requestScope, rows: [], cached: false, state: 'empty' });
+          setView({ identity: requestIdentity, rows: [], cached: false, state: 'empty' });
         }
       }
     })();
@@ -98,13 +109,13 @@ export function Alerts() {
     return () => {
       alive = false;
     };
-  }, [cacheScope, client]);
+  }, [cacheScope, client, lifecycleIdentity, owner]);
 
   // Do not render the prior account's state during the render/effect boundary.
   const visible: AlertsView =
-    cacheScope && view.scope === cacheScope
+    lifecycleIdentity && view.identity === lifecycleIdentity && owner?.isCurrent()
       ? view
-      : { scope: cacheScope, rows: [], cached: false, state: cacheScope ? 'loading' : 'empty' };
+      : { identity: lifecycleIdentity, rows: [], cached: false, state: lifecycleIdentity ? 'loading' : 'empty' };
   const { rows, cached, state } = visible;
 
   return (

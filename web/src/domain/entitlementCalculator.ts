@@ -16,7 +16,7 @@
  * the rules and are property-tested directly (Properties 10 and 11); the async
  * helpers wire them to the Local_Store queue + cached balances.
  */
-import type { BalanceOut, StoredSyncAction } from './types';
+import type { BalanceOut, LocalDataOwner, StoredSyncAction } from './types';
 import {
   getActionsByStatus,
   getBalances,
@@ -120,12 +120,12 @@ export function describeEntitlement(
 export async function getOptimisticRemaining(
   playerId: string,
   entitlementId: string,
-  cacheScope?: string | null,
+  owner: LocalDataOwner,
 ): Promise<OptimisticRemaining | null> {
-  const cached = await getBalances(playerId, cacheScope);
+  const cached = await getBalances(playerId, owner);
   const balance = cached?.balances.find((b) => b.entitlement_id === entitlementId);
   if (!balance) return null;
-  const pending = await getActionsByStatus('unsynced');
+  const pending = await getActionsByStatus('unsynced', owner);
   return optimisticRemaining(balance.remaining_units, sumPendingDraws(pending, entitlementId));
 }
 
@@ -135,11 +135,11 @@ export async function getOptimisticRemaining(
  */
 export async function getEntitlementDisplays(
   playerId: string,
-  cacheScope?: string | null,
+  owner: LocalDataOwner,
 ): Promise<EntitlementDisplay[]> {
-  const cached = await getBalances(playerId, cacheScope);
+  const cached = await getBalances(playerId, owner);
   if (!cached) return [];
-  const pending = await getActionsByStatus('unsynced');
+  const pending = await getActionsByStatus('unsynced', owner);
   return cached.balances.map((b) =>
     describeEntitlement(b, sumPendingDraws(pending, b.entitlement_id)),
   );
@@ -153,9 +153,9 @@ export async function canPlayerDraw(
   playerId: string,
   entitlementId: string,
   amount: number,
-  cacheScope?: string | null,
+  owner: LocalDataOwner,
 ): Promise<boolean> {
-  const remaining = await getOptimisticRemaining(playerId, entitlementId, cacheScope);
+  const remaining = await getOptimisticRemaining(playerId, entitlementId, owner);
   if (remaining === null) return false;
   return canDraw(remaining, amount);
 }
@@ -167,8 +167,8 @@ export async function canPlayerDraw(
 export async function refreshCachedBalances(
   playerId: string,
   balances: BalanceOut[],
+  owner: LocalDataOwner,
   cachedAt?: string,
-  cacheScope?: string | null,
 ): Promise<void> {
-  await writeBalances(playerId, balances, cachedAt, cacheScope);
+  await writeBalances(playerId, balances, owner, cachedAt);
 }

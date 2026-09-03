@@ -15,21 +15,14 @@
  *  - No national ID / residential address fields are ever collected or
  *    persisted by the capture builders or domain types. (Req 17.5)
  */
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   DB_NAME,
   closeDb,
   getAllLocalRecords,
-  type LocalRecord,
+  getDb,
   type LocalRecordStore,
 } from '../store/localStore';
-import {
-  clearSessionKey,
-  decryptPayload,
-  deriveKey,
-  generateSalt,
-  setSessionKey,
-} from './crypto';
 import { canDisplayPersonalData, readPersonalData } from './personalData';
 import { commitCapture } from '../ui/captureCommit';
 import {
@@ -44,7 +37,8 @@ import { buildAttendanceActions } from './captures/attendance';
 import { buildMetricsActions } from './captures/metrics';
 import type { CaptureContext, CaptureResult } from './captures/types';
 import { ContainerApiClient, isAllowedBaseUrl } from '../api/client';
-import type { EncryptedField } from './types';
+import type { LocalDataOwner } from './types';
+import { activateTestOwner } from '../setupTests';
 
 const ALL_RECORD_STORES: LocalRecordStore[] = [
   'players',
@@ -95,14 +89,6 @@ function ctx(): CaptureContext {
   };
 }
 
-async function allPersistedRecords(): Promise<LocalRecord[]> {
-  const out: LocalRecord[] = [];
-  for (const store of ALL_RECORD_STORES) {
-    out.push(...(await getAllLocalRecords(store)));
-  }
-  return out;
-}
-
 function registrationInput(): RegistrationInput {
   return {
     name: PLAYER_NAME,
@@ -137,24 +123,22 @@ function allCaptureResults(c: CaptureContext): CaptureResult[] {
   ];
 }
 
-let key: CryptoKey;
-
-beforeAll(async () => {
-  key = await deriveKey('login-time-secret', generateSalt());
-});
+async function freshOwner(): Promise<LocalDataOwner> {
+  await resetDb();
+  return activateTestOwner();
+}
 
 afterEach(async () => {
-  clearSessionKey();
   await closeDb();
 });
 
 describe('POPIA: personal fields are encrypted at rest across capture write paths (Req 17.1)', () => {
   it('registration persists name + guardian phone only inside an encrypted blob', async () => {
-    await resetDb();
+    const owner = await freshOwner();
     const result = buildRegistrationActions(registrationInput(), ctx());
-    await commitCapture(result, { sessionKey: key });
+    await commitCapture(result, { owner });
 
-    const players = await getAllLocalRecords('players');
+    const players = await getAllLocalRecords('players', owner);
     expect(players).toHaveLength(1);
     const player = players[0];
 
@@ -174,106 +158,115 @@ describe('POPIA: personal fields are encrypted at rest across capture write path
     expect(serialized).not.toContain(GUARDIAN_PHONE);
 
     // The blob decrypts back to exactly the personal payload.
-    const decrypted = await decryptPayload<Record<string, string>>(key, player.enc as EncryptedField);
+    const decrypted = await readPersonalData<Record<string, string>>(player, owner, 'players');
     expect(decrypted).toEqual({ name: PLAYER_NAME, guardian_phone: GUARDIAN_PHONE });
   });
 
   it('consent records encrypt their consent metadata at rest', async () => {
-    await resetDb();
+    const owner = await freshOwner();
     const result = buildRegistrationActions(registrationInput(), ctx());
-    await commitCapture(result, { sessionKey: key });
+    await commitCapture(result, { owner });
 
-    const consents = await getAllLocalRecords('consents');
+    const consents = await getAllLocalRecords('consents', owner);
     expect(consents.length).toBe(4);
     for (const consent of consents) {
       expect(consent.enc).toBeDefined();
       expect(consent.consent_type).toBeUndefined();
       expect(consent.granted).toBeUndefined();
-      const decrypted = await decryptPayload<Record<string, unknown>>(key, consent.enc as EncryptedField);
-      expect(Object.keys(decrypted).sort()).toEqual(['consent_type', 'granted']);
+      const decrypted = await readPersonalData<Record<string, unknown>>(consent, owner, 'consents');
+      expect(Object.keys(decrypted!).sort()).toEqual(['consent_type', 'granted']);
     }
   });
 
   it('metrics persists the student name only inside an encrypted blob', async () => {
-    await resetDb();
+    const owner = await freshOwner();
     const result = buildMetricsActions({ studentName: STUDENT_NAME, wpm: 40, accuracy: 95 }, ctx());
-    await commitCapture(result, { sessionKey: key });
+    await commitCapture(result, { owner });
 
-    const metrics = await getAllLocalRecords('student_metrics');
+    const metrics = await getAllLocalRecords('student_metrics', owner);
     expect(metrics.length).toBeGreaterThan(0);
     for (const row of metrics) {
       expect(row.enc).toBeDefined();
       expect(row.player_name).toBeUndefined();
       expect(JSON.stringify(row)).not.toContain(STUDENT_NAME);
-      const decrypted = await decryptPayload<Record<string, unknown>>(key, row.enc as EncryptedField);
+      const decrypted = await readPersonalData<Record<string, unknown>>(row, owner, 'student_metrics');
       expect(decrypted).toEqual({ player_name: STUDENT_NAME });
     }
   });
 
-  it('no persisted record across any write path contains a plaintext personal value (with a key)', async () => {
-    await resetDb();
+  it('no raw record across any write path contains plaintext personal, activity, or financial fields', async () => {
+    const owner = await freshOwner();
     const c = ctx();
     for (const result of allCaptureResults(c)) {
-      await commitCapture(result, { sessionKey: key });
+      await commitCapture(result, { owner });
     }
-    const serialized = JSON.stringify(await allPersistedRecords());
-    expect(serialized).not.toContain(PLAYER_NAME);
-    expect(serialized).not.toContain(GUARDIAN_PHONE);
-    expect(serialized).not.toContain(STUDENT_NAME);
+    const db = await getDb();
+    const raw: unknown[] = [];
+    for (const store of ALL_RECORD_STORES) raw.push(...await db.getAll(store));
+    const serialized = JSON.stringify(raw);
+    for (const value of [PLAYER_NAME, GUARDIAN_PHONE, STUDENT_NAME, 'PS5', 'ref-1', 'prod', 'subscription']) {
+      expect(serialized).not.toContain(value);
+    }
+    for (const row of raw as Array<Record<string, unknown>>) {
+      expect(Object.keys(row).every((key) => ['local_id', 'client_id', 'sync_scope', 'envelope'].includes(key))).toBe(true);
+    }
   });
 
-  it('with NO session key, personal fields are absent (never written in the clear) — fail-safe', async () => {
+  it('with NO owner capability, capture is rejected before any local mutation — fail-safe', async () => {
     await resetDb();
     const c = ctx();
     for (const result of allCaptureResults(c)) {
-      await commitCapture(result, { sessionKey: null });
+      await expect(commitCapture(result, { owner: null as unknown as LocalDataOwner })).rejects.toThrow(
+        'Authenticated local-data owner key is unavailable',
+      );
     }
-    const records = await allPersistedRecords();
 
-    // No plaintext personal values anywhere...
-    const serialized = JSON.stringify(records);
-    expect(serialized).not.toContain(PLAYER_NAME);
-    expect(serialized).not.toContain(GUARDIAN_PHONE);
-    expect(serialized).not.toContain(STUDENT_NAME);
-
-    // ...and, having no key, we also never wrote an `enc` blob (personal omitted).
-    for (const record of records) {
-      expect(record.enc).toBeUndefined();
+    const db = await getDb();
+    for (const store of ALL_RECORD_STORES) {
+      expect(await db.count(store)).toBe(0);
     }
+    expect(await db.count('sync_queue')).toBe(0);
   });
 });
 
 describe('POPIA: display of stored personal data is withheld until authenticated (Req 17.2)', () => {
-  it('canDisplayPersonalData is false with no session key and true with one', () => {
-    clearSessionKey();
+  it('canDisplayPersonalData requires a LocalDataOwner capability', async () => {
+    const owner = await freshOwner();
     expect(canDisplayPersonalData()).toBe(false);
-    setSessionKey(key);
-    expect(canDisplayPersonalData()).toBe(true);
-    clearSessionKey();
-    // Explicit-argument form also honours the passed key.
     expect(canDisplayPersonalData(null)).toBe(false);
-    expect(canDisplayPersonalData(key)).toBe(true);
+    expect(canDisplayPersonalData(owner)).toBe(true);
   });
 
-  it('readPersonalData yields nothing decryptable with no session key, and the payload with one', async () => {
-    await resetDb();
+  it('readPersonalData yields nothing without an owner and decrypts with the owner capability', async () => {
+    const owner = await freshOwner();
     const result = buildRegistrationActions(registrationInput(), ctx());
-    await commitCapture(result, { sessionKey: key });
-    const player = (await getAllLocalRecords('players'))[0];
+    await commitCapture(result, { owner });
+    const player = (await getAllLocalRecords('players', owner))[0];
 
-    // No key in memory → display withheld (returns null, not the plaintext).
-    clearSessionKey();
     expect(await readPersonalData(player)).toBeNull();
+    expect(await readPersonalData(player, owner, 'players')).toEqual({
+      name: PLAYER_NAME,
+      guardian_phone: GUARDIAN_PHONE,
+    });
+  });
 
-    // Authenticated (key present) → the personal payload is readable.
-    setSessionKey(key);
-    expect(await readPersonalData(player)).toEqual({ name: PLAYER_NAME, guardian_phone: GUARDIAN_PHONE });
+  it('readPersonalData fails closed when a retained same-scope owner becomes stale', async () => {
+    await resetDb();
+    let current = true;
+    const owner = await activateTestOwner('display-subject', undefined, 1, () => current);
+    const result = buildRegistrationActions(registrationInput(), ctx());
+    await commitCapture(result, { owner });
+    const player = (await getAllLocalRecords('players', owner))[0];
+
+    current = false;
+    expect(canDisplayPersonalData(owner)).toBe(false);
+    expect(await readPersonalData(player, owner, 'players')).toBeNull();
   });
 
   it('readPersonalData returns null for a record with no encrypted blob', async () => {
-    setSessionKey(key);
-    expect(await readPersonalData({ local_id: 'x' })).toBeNull();
-    expect(await readPersonalData(null)).toBeNull();
+    const owner = await freshOwner();
+    expect(await readPersonalData({ local_id: 'x' }, owner)).toBeNull();
+    expect(await readPersonalData(null, owner)).toBeNull();
   });
 });
 

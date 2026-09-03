@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import { commitCapture } from './captureCommit';
 import { SyncEngine, SyncScheduler } from '../domain/syncEngine';
 import { DB_NAME, closeDb, countUnsynced } from '../store/localStore';
+import { activateTestOwner } from '../setupTests';
 import { buildSessionActions } from '../domain/captures/session';
 import { buildRegistrationActions } from '../domain/captures/registration';
 import { buildSellActions } from '../domain/captures/sell';
@@ -75,16 +76,23 @@ describe('Offline capture performs no network call (Property 4)', () => {
       await fc.assert(
         fc.asyncProperty(captureArb, async (buildFn) => {
           await resetDb();
+          const owner = await activateTestOwner();
           const spy = makeSpyClient();
-          const engine = new SyncEngine({ client: spy.client });
-          const scheduler = new SyncScheduler({ flush: () => engine.flush(), countUnsynced });
+          const engine = new SyncEngine({
+            client: spy.client,
+            getOwner: () => owner,
+            isOwnerCurrent: (candidate) => candidate === owner,
+          });
+          const scheduler = new SyncScheduler({ flush: () => engine.flush(), countUnsynced: () => countUnsynced(owner) });
 
           const result = buildFn(ctx());
-          // Pass an explicit null session key so we exercise the no-crypto path deterministically.
-          await commitCapture(result, { scheduler, sessionKey: null });
+          await commitCapture(result, {
+            scheduler,
+            owner,
+          });
 
           // The capture completed: its actions are queued locally...
-          const queued = await countUnsynced();
+          const queued = await countUnsynced(owner);
           const nonBlocked = result.actions.filter((a) => a.status !== 'blocked').length;
           expect(queued).toBe(nonBlocked);
           // ...and no network call was made on the capture path (Req 4.4).

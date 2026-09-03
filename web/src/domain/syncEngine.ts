@@ -30,18 +30,19 @@
  * are transmitted — within the same flush, or a later one. The local→server
  * mapping is also persisted in `meta` so late-captured dependents resolve too.
  */
-import type { StoredSyncAction, SyncAction, SyncResult } from './types';
+import type { LocalDataOwner, StoredSyncAction, SyncAction, SyncResult } from './types';
 import { UnauthorizedError } from '../api/client';
 import type { ContainerApiClient } from '../api/client';
 import {
+  bumpActionAttempt,
   countUnsynced,
   getAction,
   getActionsByStatus,
-  getMeta,
+  getOwnerMetadata,
   getUnsyncedActions,
+  mergeOwnerMetadata,
   putAction,
   setLastSuccessfulSync,
-  setMeta,
   updateActionStatus,
 } from '../store/localStore';
 
@@ -151,23 +152,25 @@ export interface SyncEngineConfig {
   client: Pick<ContainerApiClient, 'sync'>;
   /** Invoked when a `401` surfaces so the Auth_Manager can clear the JWT (Req 1.7). */
   onUnauthorized?: () => void;
-  /** Current authenticated account/location/school owner of queued actions. */
-  getScope?: () => string | null;
+  /** Immutable active owner capability. */
+  getOwner?: () => LocalDataOwner | null;
+  /** Exact lifecycle/key/scope currentness check. */
+  isOwnerCurrent?: (owner: LocalDataOwner) => boolean;
 }
 
 export class SyncEngine {
   private readonly client: Pick<ContainerApiClient, 'sync'>;
   private readonly onUnauthorized?: () => void;
-  private readonly getScope?: () => string | null;
-  private readonly scoped: boolean;
+  private readonly getOwner: () => LocalDataOwner | null;
+  private readonly isOwnerCurrentFn: (owner: LocalDataOwner) => boolean;
   /** Serialise flushes so concurrent triggers (online + interval) don't race. */
   private inFlight: Promise<FlushResult> | null = null;
 
   constructor(config: SyncEngineConfig) {
     this.client = config.client;
     this.onUnauthorized = config.onUnauthorized;
-    this.getScope = config.getScope;
-    this.scoped = config.getScope !== undefined;
+    this.getOwner = config.getOwner ?? (() => null);
+    this.isOwnerCurrentFn = config.isOwnerCurrent ?? (() => false);
   }
 
   /**
@@ -195,24 +198,22 @@ export class SyncEngine {
   }
 
   /** True while the authenticated owner captured at flush start is unchanged. */
-  private isScopeCurrent(scope: string | null): boolean {
-    return !this.scoped || (this.getScope?.() ?? null) === scope;
+  private isOwnerCurrent(owner: LocalDataOwner): boolean {
+    return owner.isCurrent() && this.isOwnerCurrentFn(owner);
   }
 
   private async doFlush(): Promise<FlushResult> {
-    const syncScope = this.getScope?.() ?? null;
-    // In production a missing scope means logout/session replacement. Never
-    // fall back to the unscoped queue, which could belong to another account.
-    if (this.scoped && syncScope === null) {
+    const owner = this.getOwner();
+    if (!owner || !this.isOwnerCurrent(owner)) {
       return this.emptyResult();
     }
 
     // Apply any resolutions learned in a previous flush before batching (D2).
-    await this.applyStoredResolutions(syncScope);
-    await this.applyStoredSessionResolutions(syncScope);
-    if (!this.isScopeCurrent(syncScope)) return this.emptyResult();
+    await this.applyStoredResolutions(owner);
+    await this.applyStoredSessionResolutions(owner);
+    if (!this.isOwnerCurrent(owner)) return this.emptyResult();
 
-    const unsynced = await getUnsyncedActions(syncScope);
+    const unsynced = await getUnsyncedActions(owner);
     if (unsynced.length === 0) return this.emptyResult();
 
     // D2: dependents referencing a player action still queued locally are
@@ -243,31 +244,33 @@ export class SyncEngine {
     const agg = emptyAgg();
 
     // Phase 1: players + independent actions, ordered by created_at/client_id.
-    const t1 = await this.transmit(phase1, agg, syncScope);
+    const t1 = await this.transmit(phase1, agg, owner);
     if (t1.outcome !== 'ok') {
-      return this.failureResult(agg, t1, syncScope);
+      return this.failureResult(agg, t1, owner, unsynced.length);
     }
 
     // Resolve dependents from phase-1 player/session applies, then send them.
     if (Object.keys(t1.playerResolutions).length > 0) {
-      await this.persistResolutions(t1.playerResolutions, syncScope);
-      await this.applyStoredResolutions(syncScope);
+      await this.persistResolutions(t1.playerResolutions, owner);
+      await this.applyStoredResolutions(owner);
     }
     if (Object.keys(t1.sessionResolutions).length > 0) {
-      await this.persistSessionResolutions(t1.sessionResolutions, syncScope);
-      await this.applyStoredSessionResolutions(syncScope);
+      await this.persistSessionResolutions(t1.sessionResolutions, owner);
+      await this.applyStoredSessionResolutions(owner);
     }
-    if (!this.isScopeCurrent(syncScope)) {
+    if (!this.isOwnerCurrent(owner)) {
       return this.failureResult(
         agg,
         this.scopeChangedOutcome(),
-        syncScope,
+        owner,
+        unsynced.length,
       );
     }
 
     const phase2: StoredSyncAction[] = [];
     for (const action of deferred) {
-      const fresh = await getAction(action.client_id);
+      const fresh = await getAction(action.client_id, owner);
+      if (!this.isOwnerCurrent(owner)) return this.emptyResult();
       if (!fresh || fresh.status !== 'unsynced') continue;
       const pid = playerRefOf(fresh);
       const sessionId = sessionRefOf(fresh);
@@ -278,35 +281,42 @@ export class SyncEngine {
     }
 
     if (phase2.length > 0) {
-      const t2 = await this.transmit(phase2, agg, syncScope);
+      const t2 = await this.transmit(phase2, agg, owner);
       if (t2.outcome !== 'ok') {
-        return this.failureResult(agg, t2, syncScope);
+        return this.failureResult(agg, t2, owner, unsynced.length);
       }
       if (Object.keys(t2.playerResolutions).length > 0) {
-        await this.persistResolutions(t2.playerResolutions, syncScope);
+        await this.persistResolutions(t2.playerResolutions, owner);
       }
       if (Object.keys(t2.sessionResolutions).length > 0) {
-        await this.persistSessionResolutions(t2.sessionResolutions, syncScope);
-        await this.applyStoredSessionResolutions(syncScope);
+        await this.persistSessionResolutions(t2.sessionResolutions, owner);
+        await this.applyStoredSessionResolutions(owner);
       }
     }
 
+    if (!this.isOwnerCurrent(owner)) {
+      return this.failureResult(agg, this.scopeChangedOutcome(), owner, unsynced.length);
+    }
     return {
       outcome: 'ok',
       ...agg,
-      remainingUnsynced: await countUnsynced(syncScope),
+      remainingUnsynced: await countUnsynced(owner),
     };
   }
 
   private async failureResult(
     agg: Agg,
     t: TransmitOutcome,
-    scope: string | null,
+    owner: LocalDataOwner,
+    remainingFallback = 0,
   ): Promise<FlushResult> {
+    const remainingUnsynced = this.isOwnerCurrent(owner)
+      ? await countUnsynced(owner)
+      : remainingFallback;
     return {
       outcome: t.outcome,
       ...agg,
-      remainingUnsynced: await countUnsynced(scope),
+      remainingUnsynced,
       error: t.error,
     };
   }
@@ -319,12 +329,12 @@ export class SyncEngine {
   private async transmit(
     actions: StoredSyncAction[],
     agg: Agg,
-    scope: string | null,
+    owner: LocalDataOwner,
   ): Promise<TransmitOutcome> {
     if (actions.length === 0) {
       return { outcome: 'ok', playerResolutions: {}, sessionResolutions: {} };
     }
-    if (!this.isScopeCurrent(scope)) return this.scopeChangedOutcome();
+    if (!this.isOwnerCurrent(owner)) return this.scopeChangedOutcome();
 
     // Build the wire batch, copying created_at/client_id verbatim (Req 5.7).
     const batch: SyncAction[] = actions.map((a) => ({
@@ -333,6 +343,7 @@ export class SyncEngine {
       created_at: a.created_at,
       payload: a.payload,
     }));
+    if (!this.isOwnerCurrent(owner)) return this.scopeChangedOutcome();
 
     let result: SyncResult;
     try {
@@ -340,8 +351,8 @@ export class SyncEngine {
       // a different account cannot supply credentials for this batch.
       result = await this.client.sync(batch);
     } catch (err) {
-      if (!this.isScopeCurrent(scope)) return this.scopeChangedOutcome(err);
-      await this.retainAll(actions);
+      if (!this.isOwnerCurrent(owner)) return this.scopeChangedOutcome(err);
+      await this.retainAll(actions, owner);
       if (err instanceof UnauthorizedError) {
         this.onUnauthorized?.();
         return {
@@ -360,7 +371,7 @@ export class SyncEngine {
     }
     // If logout/account replacement happened while the request was in flight,
     // leave local reconciliation for a later flush under the captured owner.
-    if (!this.isScopeCurrent(scope)) return this.scopeChangedOutcome();
+    if (!this.isOwnerCurrent(owner)) return this.scopeChangedOutcome();
 
     agg.attempted += actions.length;
     const byId = new Map(result.results.map((r) => [r.client_id, r]));
@@ -371,11 +382,14 @@ export class SyncEngine {
       const r = byId.get(action.client_id);
       if (!r) {
         // Submitted action with no matching result → still unsynced, retry (Req 5.3).
-        await this.bumpAttempt(action.client_id);
+        if (!this.isOwnerCurrent(owner)) return this.scopeChangedOutcome();
+        await this.bumpAttempt(action, owner);
         continue;
       }
       if (r.status === 'applied' || r.status === 'skipped') {
-        await updateActionStatus(action.client_id, r.status);
+        if (!this.isOwnerCurrent(owner)) return this.scopeChangedOutcome();
+        const transitioned = await updateActionStatus(action, r.status, owner);
+        if (!transitioned) continue;
         if (r.status === 'applied') agg.applied += 1;
         else agg.skipped += 1;
         if (action.entity === 'player' && r.record_id) {
@@ -386,14 +400,16 @@ export class SyncEngine {
         }
       } else {
         // rejected → retain locally with reason, exclude from future batches (Req 5.6).
-        await updateActionStatus(action.client_id, 'rejected', r.reason ?? undefined);
-        agg.rejected += 1;
+        if (!this.isOwnerCurrent(owner)) return this.scopeChangedOutcome();
+        const transitioned = await updateActionStatus(action, 'rejected', owner, r.reason ?? undefined);
+        if (transitioned) agg.rejected += 1;
       }
     }
 
     // A `200` response (even one with rejections) is a successful reach of the
     // server → advance the last-successful-sync marker (Req 6.4 basis).
-    await setLastSuccessfulSync(new Date().toISOString(), scope);
+    if (!this.isOwnerCurrent(owner)) return this.scopeChangedOutcome();
+    await setLastSuccessfulSync(new Date().toISOString(), owner);
     return { outcome: 'ok', playerResolutions, sessionResolutions };
   }
 
@@ -407,49 +423,44 @@ export class SyncEngine {
   }
 
   /** Retain every still-unsynced action, bumping its attempt counter (Req 5.5). */
-  private async retainAll(actions: StoredSyncAction[]): Promise<void> {
+  private async retainAll(actions: StoredSyncAction[], owner: LocalDataOwner): Promise<void> {
     for (const action of actions) {
-      await this.bumpAttempt(action.client_id);
+      if (!this.isOwnerCurrent(owner)) return;
+      await this.bumpAttempt(action, owner);
     }
   }
 
-  private async bumpAttempt(clientId: string): Promise<void> {
-    const fresh = await getAction(clientId);
-    if (fresh && fresh.status === 'unsynced') {
-      fresh.attempt_count += 1;
-      await putAction(fresh);
-    }
+  private async bumpAttempt(action: StoredSyncAction, owner: LocalDataOwner): Promise<void> {
+    if (!this.isOwnerCurrent(owner)) return;
+    await bumpActionAttempt(action, owner);
   }
 
-  private resolutionMetaKey(scope: string | null): string {
-    return playerResolutionMetaKey(scope);
+  private resolutionMetaKey(owner: LocalDataOwner): string {
+    return playerResolutionMetaKey(owner.scope);
   }
 
-  private sessionResolutionMetaKey(scope: string | null): string {
-    return sessionResolutionMetaKey(scope);
+  private sessionResolutionMetaKey(owner: LocalDataOwner): string {
+    return sessionResolutionMetaKey(owner.scope);
   }
 
   /** Merge new local→server player-id mappings into the persisted resolution map. */
   private async persistResolutions(
     newOnes: Record<string, string>,
-    scope: string | null,
+    owner: LocalDataOwner,
   ): Promise<void> {
-    const key = this.resolutionMetaKey(scope);
-    const map = (await getMeta<Record<string, string>>(key)) ?? {};
-    Object.assign(map, newOnes);
-    await setMeta(key, map);
-    notifyPlayerDirectoryChanged(scope);
+    const key = this.resolutionMetaKey(owner);
+    await mergeOwnerMetadata(key, newOnes, owner);
+    if (!this.isOwnerCurrent(owner)) return;
+    notifyPlayerDirectoryChanged(owner.scope);
   }
 
   /** Merge local→server session-id mappings into scoped metadata. */
   private async persistSessionResolutions(
     newOnes: Record<string, string>,
-    scope: string | null,
+    owner: LocalDataOwner,
   ): Promise<void> {
-    const key = this.sessionResolutionMetaKey(scope);
-    const map = (await getMeta<Record<string, string>>(key)) ?? {};
-    Object.assign(map, newOnes);
-    await setMeta(key, map);
+    const key = this.sessionResolutionMetaKey(owner);
+    await mergeOwnerMetadata(key, newOnes, owner);
   }
 
   /**
@@ -457,11 +468,12 @@ export class SyncEngine {
    * local→server mapping. Only `player_id` changes; `created_at`/`client_id`
    * are untouched (Req 5.7).
    */
-  private async applyStoredResolutions(scope: string | null): Promise<void> {
-    const key = this.resolutionMetaKey(scope);
-    const map = (await getMeta<Record<string, string>>(key)) ?? {};
-    if (Object.keys(map).length === 0) return;
-    const unsynced = await getActionsByStatus('unsynced', scope);
+  private async applyStoredResolutions(owner: LocalDataOwner): Promise<void> {
+    const key = this.resolutionMetaKey(owner);
+    const map = (await getOwnerMetadata<Record<string, string>>(key, owner)) ?? {};
+    if (!this.isOwnerCurrent(owner) || Object.keys(map).length === 0) return;
+    const unsynced = await getActionsByStatus('unsynced', owner);
+    if (!this.isOwnerCurrent(owner)) return;
     for (const action of unsynced) {
       if (action.entity === 'player') continue;
       const pid = playerRefOf(action);
@@ -470,16 +482,18 @@ export class SyncEngine {
       if (!resolved || resolved === pid) continue;
       const payload = { ...(action.payload as Record<string, unknown>), player_id: resolved };
       const updated: StoredSyncAction = { ...action, payload, player_id: resolved };
-      await putAction(updated);
+      if (!this.isOwnerCurrent(owner)) return;
+      await putAction(updated, owner);
     }
   }
 
   /** Rewrite attendance `session_id` references once their session is applied. */
-  private async applyStoredSessionResolutions(scope: string | null): Promise<void> {
-    const key = this.sessionResolutionMetaKey(scope);
-    const map = (await getMeta<Record<string, string>>(key)) ?? {};
-    if (Object.keys(map).length === 0) return;
-    const unsynced = await getActionsByStatus('unsynced', scope);
+  private async applyStoredSessionResolutions(owner: LocalDataOwner): Promise<void> {
+    const key = this.sessionResolutionMetaKey(owner);
+    const map = (await getOwnerMetadata<Record<string, string>>(key, owner)) ?? {};
+    if (!this.isOwnerCurrent(owner) || Object.keys(map).length === 0) return;
+    const unsynced = await getActionsByStatus('unsynced', owner);
+    if (!this.isOwnerCurrent(owner)) return;
     for (const action of unsynced) {
       const sessionId = sessionRefOf(action);
       if (sessionId === undefined) continue;
@@ -489,7 +503,8 @@ export class SyncEngine {
         ...(action.payload as Record<string, unknown>),
         session_id: resolved,
       };
-      await putAction({ ...action, payload });
+      if (!this.isOwnerCurrent(owner)) return;
+      await putAction({ ...action, payload }, owner);
     }
   }
 }
