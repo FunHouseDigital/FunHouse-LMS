@@ -5,3 +5,5 @@ dist-ssr
 .DS_Store
 coverage
 dev-dist
+test-results
+playwright-report

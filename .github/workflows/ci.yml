@@ -203,12 +203,17 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: Install Playwright Chromium
+        if: steps.guard.outputs.present == 'true'
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
       - name: Run web unit tests
         if: steps.guard.outputs.present == 'true'
         working-directory: web
         run: npm run test
 
-      - name: Production build
+      - name: Production build + hermetic five-session offline gate
         if: steps.guard.outputs.present == 'true'
         working-directory: web
-        run: npm run build
+        run: npm run test:field-acceptance-hermetic
