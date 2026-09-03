@@ -10,10 +10,12 @@ import {
   DB_NAME,
   closeDb,
   enqueueAction,
+  getAction,
   updateActionStatus,
   countUnsynced,
 } from '../store/localStore';
 import type { EntityType, SyncStatus } from '../domain/types';
+import { activateTestOwner } from '../setupTests';
 
 async function resetDb(): Promise<void> {
   await closeDb();
@@ -41,6 +43,16 @@ const statusArb: fc.Arbitrary<SyncStatus> = fc.constantFrom(
 );
 
 describe('Sync status — unsynced badge (Property 8)', () => {
+  it('does not report quarantined legacy work as synced', () => {
+    const view = deriveSyncStatus({
+      unsyncedCount: 0,
+      quarantinedCount: 1,
+      lastSuccessfulSync: null,
+    });
+    expect(view.synced).toBe(false);
+    expect(view.quarantinedCount).toBe(1);
+  });
+
   // Feature: revenue-pwa, Property 8: Unsynced badge equals the count of unsynced
   // actions. For any Sync_Queue, the displayed unsynced-items count equals the number
   // of actions with status unsynced, and it re-derives to the correct value after any
@@ -52,6 +64,7 @@ describe('Sync status — unsynced badge (Property 8)', () => {
         fc.array(fc.record({ entity: entityArb, status: statusArb }), { maxLength: 20 }),
         async (raws) => {
           await resetDb();
+          const owner = await activateTestOwner();
           for (let i = 0; i < raws.length; i++) {
             await enqueueAction(
               {
@@ -60,14 +73,14 @@ describe('Sync status — unsynced badge (Property 8)', () => {
                 created_at: new Date(1_700_000_000_000 + i).toISOString(),
                 payload: { v: i },
               },
-              { status: raws[i].status },
+              { status: raws[i].status, owner },
             );
           }
 
           const expectedUnsynced = raws.filter((r) => r.status === 'unsynced').length;
-          expect(await countUnsynced()).toBe(expectedUnsynced);
+          expect(await countUnsynced(owner)).toBe(expectedUnsynced);
 
-          const view = await readSyncStatus(Date.now());
+          const view = await readSyncStatus(Date.now(), owner);
           expect(view.unsyncedCount).toBe(expectedUnsynced);
           expect(view.synced).toBe(expectedUnsynced === 0);
           // Rejected actions are surfaced.
@@ -76,10 +89,10 @@ describe('Sync status — unsynced badge (Property 8)', () => {
           // Reconcile: mark every remaining unsynced action applied → badge goes to 0.
           for (let i = 0; i < raws.length; i++) {
             if (raws[i].status === 'unsynced') {
-              await updateActionStatus(`a-${i}`, 'applied');
+              await updateActionStatus((await getAction(`a-${i}`, owner))!, 'applied', owner);
             }
           }
-          const after = await readSyncStatus(Date.now());
+          const after = await readSyncStatus(Date.now(), owner);
           expect(after.unsyncedCount).toBe(0);
           expect(after.synced).toBe(true);
           return true;

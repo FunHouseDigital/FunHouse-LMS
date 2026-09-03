@@ -11,6 +11,7 @@ import {
   type LocalRecord,
 } from './localStore';
 import type { EntityType, SyncAction } from '../domain/types';
+import { activateTestOwner } from '../setupTests';
 
 /** Drop the database entirely so each property run starts from a clean slate. */
 async function resetDb(): Promise<void> {
@@ -63,6 +64,7 @@ describe('Local_Store persistence', () => {
         ),
         async (rawActions, rawRecords) => {
           await resetDb();
+          const owner = await activateTestOwner();
 
           const actions: SyncAction[] = rawActions.map((a, i) => ({
             client_id: `act-${i}`,
@@ -71,23 +73,24 @@ describe('Local_Store persistence', () => {
             payload: a.payload,
           }));
           for (const action of actions) {
-            await enqueueAction(action);
+            await enqueueAction(action, { owner });
           }
 
           const records: LocalRecord[] = rawRecords.map((r, i) => ({
             local_id: `rec-${i}`,
             day: r.day,
             player_id: r.player_id,
+            sync_scope: owner.scope,
           }));
           for (const record of records) {
-            await writeLocalRecord('sessions', record);
+            await writeLocalRecord('sessions', record, owner);
           }
 
           // Simulate an app relaunch: fully close, then reopen on next access.
           await closeDb();
 
-          const readActions = await getUnsyncedActions();
-          const readRecords = await getAllLocalRecords('sessions');
+          const readActions = await getUnsyncedActions(owner);
+          const readRecords = await getAllLocalRecords('sessions', owner);
 
           // No loss.
           expect(readActions).toHaveLength(actions.length);
@@ -111,7 +114,9 @@ describe('Local_Store persistence', () => {
           // Every local record round-trips faithfully.
           const recById = new Map(readRecords.map((r) => [r.local_id, r]));
           for (const record of records) {
-            expect(recById.get(record.local_id)).toEqual(record);
+            const received = recById.get(record.local_id);
+            expect(received).toMatchObject(record);
+            expect(received?.enc).toBeDefined();
           }
 
           return true;

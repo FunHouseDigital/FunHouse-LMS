@@ -13,14 +13,16 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { StoredSyncAction } from '../domain/types';
+import { localDataLifecycleIdentity } from '../domain/personalData';
+import type { LocalDataOwner, StoredSyncAction } from '../domain/types';
 import { useAuth } from './authState';
 import { sessionScopeKey } from './referenceDataState';
 import {
+  countActionsByStatus,
   countUnsynced,
   getActionsByStatus,
   getLastSuccessfulSync,
-  getLegacyUnscopedActions,
+  countQuarantinedLegacyData,
 } from '../store/localStore';
 
 /** Five full days in milliseconds (Req 6.4). */
@@ -70,7 +72,7 @@ export function deriveSyncStatus(input: {
     unsyncedCount: input.unsyncedCount,
     blockedCount: input.blockedCount ?? 0,
     quarantinedCount: input.quarantinedCount ?? 0,
-    synced: input.unsyncedCount === 0,
+    synced: input.unsyncedCount === 0 && (input.quarantinedCount ?? 0) === 0,
     stale: isStale(input.lastSuccessfulSync, input.now),
     rejected: input.rejected ?? [],
     lastSuccessfulSync: input.lastSuccessfulSync,
@@ -90,32 +92,29 @@ function toRejectedItem(action: StoredSyncAction): RejectedItem {
  */
 export async function readSyncStatus(
   now: number = Date.now(),
-  scope?: string | null,
+  owner: LocalDataOwner | null = null,
 ): Promise<SyncStatusView> {
-  if (scope === null) return deriveSyncStatus({ unsyncedCount: 0, lastSuccessfulSync: null, now });
+  if (!owner || !owner.isCurrent()) return deriveSyncStatus({ unsyncedCount: 0, lastSuccessfulSync: null, now });
 
-  const [unsyncedCount, lastSync, rejectedActions, blockedActions, quarantinedGroups] =
+  const [unsyncedCount, lastSync, rejectedCount, blockedCount, quarantinedCount] =
     await Promise.all([
-      countUnsynced(scope),
-      getLastSuccessfulSync(scope),
-      getActionsByStatus('rejected', scope),
-      getActionsByStatus('blocked', scope),
-      scope
-        ? Promise.all([
-            getLegacyUnscopedActions('unsynced'),
-            getLegacyUnscopedActions('rejected'),
-            getLegacyUnscopedActions('blocked'),
-          ])
-        : Promise.resolve([] as StoredSyncAction[][]),
+      countUnsynced(owner),
+      getLastSuccessfulSync(owner),
+      countActionsByStatus(owner, 'rejected'),
+      countActionsByStatus(owner, 'blocked'),
+      countQuarantinedLegacyData(),
     ]);
+  if (!owner.isCurrent()) return deriveSyncStatus({ unsyncedCount: 0, lastSuccessfulSync: null, now });
+  const rejectedActions = await getActionsByStatus('rejected', owner);
+  if (!owner.isCurrent()) return deriveSyncStatus({ unsyncedCount: 0, lastSuccessfulSync: null, now });
 
   return deriveSyncStatus({
     unsyncedCount,
     lastSuccessfulSync: lastSync,
     now,
-    rejected: rejectedActions.map(toRejectedItem),
-    blockedCount: blockedActions.length,
-    quarantinedCount: quarantinedGroups.reduce((total, actions) => total + actions.length, 0),
+    rejected: rejectedActions.slice(0, rejectedCount).map(toRejectedItem),
+    blockedCount,
+    quarantinedCount,
   });
 }
 
@@ -139,7 +138,7 @@ const EMPTY_VIEW: SyncStatusView = {
 };
 
 interface ScopedView {
-  scope: string | null;
+  identity: string | null;
   view: SyncStatusView;
 }
 
@@ -150,35 +149,37 @@ export interface SyncStatusProviderProps {
 }
 
 export function SyncStatusProvider({ children, now }: SyncStatusProviderProps) {
-  const { session } = useAuth();
+  const { session, localDataOwner } = useAuth();
   const syncScope = sessionScopeKey(session);
-  const [stored, setStored] = useState<ScopedView>({ scope: null, view: EMPTY_VIEW });
-  const activeScope = useRef<string | null>(syncScope);
+  const lifecycleIdentity = localDataLifecycleIdentity(localDataOwner);
+  const [stored, setStored] = useState<ScopedView>({ identity: null, view: EMPTY_VIEW });
+  const activeIdentity = useRef<string | null>(lifecycleIdentity);
   const requestGeneration = useRef(0);
 
   // Invalidate old-account reads during render, before passive-effect cleanup.
-  if (activeScope.current !== syncScope) {
-    activeScope.current = syncScope;
+  if (activeIdentity.current !== lifecycleIdentity) {
+    activeIdentity.current = lifecycleIdentity;
     requestGeneration.current += 1;
   }
 
   const refresh = useCallback(async () => {
-    const requestScope = syncScope;
+    const requestIdentity = lifecycleIdentity;
     const generation = ++requestGeneration.current;
-    if (!requestScope) {
-      setStored({ scope: null, view: EMPTY_VIEW });
+    if (!requestIdentity || !localDataOwner) {
+      setStored({ identity: null, view: EMPTY_VIEW });
       return;
     }
 
-    const next = await readSyncStatus(now ? now() : Date.now(), requestScope);
+    const next = await readSyncStatus(now ? now() : Date.now(), localDataOwner);
     if (
       generation !== requestGeneration.current ||
-      activeScope.current !== requestScope
+      activeIdentity.current !== requestIdentity ||
+      !localDataOwner.isCurrent()
     ) {
       return;
     }
-    setStored({ scope: requestScope, view: next });
-  }, [now, syncScope]);
+    setStored({ identity: requestIdentity, view: next });
+  }, [lifecycleIdentity, localDataOwner, now]);
 
   useEffect(() => {
     void refresh();
@@ -193,8 +194,8 @@ export function SyncStatusProvider({ children, now }: SyncStatusProviderProps) {
     return () => clearInterval(timer);
   }, [now, refresh, syncScope]);
 
-  const loading = syncScope !== null && stored.scope !== syncScope;
-  const visible = !loading && syncScope ? stored.view : EMPTY_VIEW;
+  const loading = lifecycleIdentity !== null && stored.identity !== lifecycleIdentity;
+  const visible = !loading && lifecycleIdentity && localDataOwner?.isCurrent() ? stored.view : EMPTY_VIEW;
   const value = useMemo<SyncStatusContextValue>(
     () => ({ ...visible, loading, refresh }),
     [loading, refresh, visible],

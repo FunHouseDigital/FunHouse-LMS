@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServices } from '../state/servicesState';
 import { useReferenceData } from '../state/referenceDataState';
+import { localDataLifecycleIdentity } from '../domain/personalData';
 import { getEntitlementDisplays } from '../domain/entitlementCalculator';
 import type { EntitlementDisplay } from '../domain/entitlementCalculator';
 import {
@@ -28,40 +29,45 @@ import { useKnownPlayers } from './useKnownPlayers';
 
 export function LogSession() {
   const { commit } = useServices();
-  const { cacheScope, refreshPlayerEntitlements } = useReferenceData();
+  const { cacheScope, owner, refreshPlayerEntitlements } = useReferenceData();
+  const identity = localDataLifecycleIdentity(owner);
   const players = useKnownPlayers();
 
-  const [search, setSearch] = useState('');
+  const [searchState, setSearchState] = useState({ identity: null as string | null, value: '' });
+  const search = searchState.identity === identity ? searchState.value : '';
   const [playerId, setPlayerId] = useState<string | null>(null);
+  const [selectionIdentity, setSelectionIdentity] = useState<string | null>(null);
   const [consoleChoice, setConsoleChoice] = useState<ConsoleOption>('PS5');
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
   const [customMinutes, setCustomMinutes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'entitlement' | null>(null);
   const [cashRand, setCashRand] = useState('');
   const [entitlementId, setEntitlementId] = useState<string | null>(null);
-  const [displays, setDisplays] = useState<EntitlementDisplay[]>([]);
+  const [displaySnapshot, setDisplaySnapshot] = useState<{ identity: string | null; rows: EntitlementDisplay[] }>({ identity: null, rows: [] });
+  const activePlayerId = selectionIdentity === identity && owner?.isCurrent() ? playerId : null;
+  const displays = displaySnapshot.identity === identity && owner?.isCurrent() ? displaySnapshot.rows : [];
   const [confirmed, setConfirmed] = useState(false);
 
   // Load the selected player's optimistic entitlement displays (Req 8.1, 8.2).
   useEffect(() => {
     let alive = true;
-    if (!playerId) {
-      setDisplays([]);
+    if (!activePlayerId || !owner) {
+      setDisplaySnapshot({ identity, rows: [] });
       return;
     }
     void (async () => {
-      const cached = await getEntitlementDisplays(playerId, cacheScope);
-      if (alive) setDisplays(cached);
+      const cached = await getEntitlementDisplays(activePlayerId, owner);
+      if (alive && owner.isCurrent()) setDisplaySnapshot({ identity, rows: cached });
 
-      const refreshed = await refreshPlayerEntitlements(playerId);
+      const refreshed = await refreshPlayerEntitlements(activePlayerId);
       if (!refreshed) return;
-      const next = await getEntitlementDisplays(playerId, cacheScope);
-      if (alive) setDisplays(next);
+      const next = await getEntitlementDisplays(activePlayerId, owner);
+      if (alive && owner.isCurrent()) setDisplaySnapshot({ identity, rows: next });
     })();
     return () => {
       alive = false;
     };
-  }, [cacheScope, playerId, refreshPlayerEntitlements]);
+  }, [activePlayerId, cacheScope, identity, owner, refreshPlayerEntitlements]);
 
   const recent = useMemo(() => players.slice(0, 5), [players]);
   const filtered = useMemo(() => {
@@ -93,19 +99,19 @@ export function LogSession() {
   }, [paymentMethod, cashRand, entitlementId]);
 
   const draft: Partial<SessionInput> | null = useMemo(() => {
-    if (!playerId || effectiveDuration === null) return null;
+    if (!activePlayerId || effectiveDuration === null) return null;
     const payment = buildPayment();
-    return payment ? { playerId, console: consoleChoice, durationMinutes: effectiveDuration, payment } : { playerId, durationMinutes: effectiveDuration };
-  }, [playerId, effectiveDuration, consoleChoice, buildPayment]);
+    return payment ? { playerId: activePlayerId, console: consoleChoice, durationMinutes: effectiveDuration, payment } : { playerId: activePlayerId, durationMinutes: effectiveDuration };
+  }, [activePlayerId, effectiveDuration, consoleChoice, buildPayment]);
 
   const confirmEnabled = canConfirmSession(draft) && buildPayment() !== null;
 
   const onConfirm = useCallback(async () => {
-    if (!playerId || effectiveDuration === null) return;
+    if (!activePlayerId || effectiveDuration === null || !owner?.isCurrent()) return;
     const payment = buildPayment();
     if (!payment) return;
     const input: SessionInput = {
-      playerId,
+      playerId: activePlayerId,
       console: consoleChoice,
       durationMinutes: effectiveDuration,
       payment,
@@ -122,7 +128,7 @@ export function LogSession() {
     setEntitlementId(null);
     setDurationMinutes(null);
     setCustomMinutes('');
-  }, [playerId, effectiveDuration, consoleChoice, buildPayment, commit]);
+  }, [activePlayerId, effectiveDuration, consoleChoice, buildPayment, commit, owner]);
 
   return (
     <section aria-label="Log Session" data-screen-body="log-session">
@@ -136,15 +142,18 @@ export function LogSession() {
           aria-label="Search players"
           placeholder="Search players"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => setSearchState({ identity, value: e.target.value })}
         />
         <ul aria-label="Players">
           {filtered.map((p) => (
             <li key={p.id}>
               <button
                 type="button"
-                aria-pressed={playerId === p.id}
-                onClick={() => setPlayerId(p.id)}
+                aria-pressed={activePlayerId === p.id}
+                onClick={() => {
+                  setPlayerId(p.id);
+                  setSelectionIdentity(identity);
+                }}
               >
                 {p.name}
               </button>
@@ -263,7 +272,7 @@ export function LogSession() {
       </fieldset>
 
       {/* Pre-confirm balance display for the selected player (Req 8.1). */}
-      {playerId && displays.length > 0 && (
+      {activePlayerId && displays.length > 0 && (
         <section aria-label="Entitlement balance">
           {displays.map((d) => (
             <p key={d.entitlement_id} data-entitlement={d.entitlement_id}>

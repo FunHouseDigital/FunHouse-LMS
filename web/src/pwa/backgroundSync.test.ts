@@ -22,6 +22,8 @@ import {
   type SyncFlushMessage,
 } from './backgroundSync';
 import { registerServiceWorker } from './register';
+import serviceWorkerSource from '../sw.ts?raw';
+import backgroundSyncSource from './backgroundSync.ts?raw';
 
 describe('sync tag classification (Req 5.2)', () => {
   it('handles only the funhouse-sync tag', () => {
@@ -37,6 +39,8 @@ describe('flush-request message contract', () => {
     const msg = makeSyncFlushMessage();
     expect(msg.type).toBe(SYNC_FLUSH_MESSAGE_TYPE);
     expect(msg.tag).toBe('funhouse-sync');
+    expect(Object.keys(msg).sort()).toEqual(['tag', 'type']);
+    expect(JSON.stringify(msg)).not.toMatch(/key|token|payload|indexeddb/i);
   });
 
   it('recognises its own messages and rejects foreign ones', () => {
@@ -67,6 +71,14 @@ describe('notifyClientsToFlush (SW → clients)', () => {
 
   it('is a safe no-op when no client is open', () => {
     expect(notifyClientsToFlush([])).toBe(0);
+  });
+});
+
+describe('service-worker key blindness', () => {
+  it('keeps the worker and its sync helper independent of IndexedDB and local keyrings', () => {
+    const workerBoundary = `${serviceWorkerSource}\n${backgroundSyncSource}`;
+    expect(workerBoundary).not.toMatch(/indexedDB|localStore|owner_data_keys|legacy_quarantine|CryptoKey|session_key/);
+    expect(serviceWorkerSource).toContain('notifyClientsToFlush');
   });
 });
 

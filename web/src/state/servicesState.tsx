@@ -21,7 +21,7 @@ import {
   type FlushOutcome,
   type FlushResult,
 } from '../domain/syncEngine';
-import { countUnsynced } from '../store/localStore';
+import { countOperationalUnsynced } from '../store/localStore';
 import { commitCapture } from '../ui/captureCommit';
 import type { CaptureResult } from '../domain/captures/types';
 import { listenForFlushRequests } from '../pwa/backgroundSync';
@@ -79,16 +79,20 @@ function emptyFlushResult(): FlushResult {
 }
 
 export function ServicesProvider({ children, scheduler: injected }: ServicesProviderProps) {
-  const { client, logout, session } = useAuth();
+  const { client, logout, session, localDataOwner, isLocalDataOwnerCurrent } = useAuth();
   const { refresh } = useSyncStatus();
   const syncScope = sessionScopeKey(session);
   const sessionIdentity = session?.access_token ?? null;
   const scopeRef = useRef<string | null>(syncScope);
+  const ownerRef = useRef(localDataOwner);
+  const ownerCurrentRef = useRef(isLocalDataOwnerCurrent);
   const sessionIdentityRef = useRef<string | null>(sessionIdentity);
   const sessionGenerationRef = useRef(0);
   const refreshRef = useRef(refresh);
   const logoutRef = useRef(logout);
   scopeRef.current = syncScope;
+  ownerRef.current = localDataOwner;
+  ownerCurrentRef.current = isLocalDataOwnerCurrent;
   if (sessionIdentityRef.current !== sessionIdentity) {
     sessionIdentityRef.current = sessionIdentity;
     sessionGenerationRef.current += 1;
@@ -118,14 +122,13 @@ export function ServicesProvider({ children, scheduler: injected }: ServicesProv
         client,
         // ContainerApiClient performs centralized token/generation-aware 401
         // revocation; SyncEngine keeps its callback only for isolated tests.
-        getScope: () => scopeRef.current,
+        getOwner: () => ownerRef.current,
+        isOwnerCurrent: (owner) =>
+          owner.isCurrent() && ownerCurrentRef.current(owner),
       });
       const full = new SyncScheduler({
         flush: () => runFlushRef.current(),
-        countUnsynced: () => {
-          const scope = scopeRef.current;
-          return scope ? countUnsynced(scope) : Promise.resolve(0);
-        },
+        countUnsynced: countOperationalUnsynced,
       });
       runtimeRef.current = { scheduler: full, full, engine };
     }
@@ -281,6 +284,9 @@ export function ServicesProvider({ children, scheduler: injected }: ServicesProv
         // replaced authenticated session.
         if (
           !syncScope ||
+          !localDataOwner ||
+          !localDataOwner.isCurrent() ||
+          !isLocalDataOwnerCurrent(localDataOwner) ||
           scopeRef.current !== syncScope ||
           sessionGenerationRef.current !== sessionGeneration
         ) {
@@ -290,14 +296,16 @@ export function ServicesProvider({ children, scheduler: injected }: ServicesProv
 
         // Local persistence and the pending badge complete before any network
         // attempt. The scheduler nudge continues through the shared coordinator.
-        await commitCapture(result, { scope: syncScope });
+        await commitCapture(result, {
+          owner: localDataOwner!,
+        });
         await refresh();
         void scheduler.onEnqueue().catch(() => {
           void refreshRef.current();
         });
       },
     };
-  }, [attempt, refresh, runFlush, sessionGeneration, syncScope]);
+  }, [attempt, refresh, runFlush, sessionGeneration, syncScope, localDataOwner, isLocalDataOwnerCurrent]);
 
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }

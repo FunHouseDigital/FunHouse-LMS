@@ -15,7 +15,7 @@ import { useKnownPlayers, type PlayerChoice } from './useKnownPlayers';
 import {
   getAllLocalRecords,
   getBalances,
-  getMeta,
+  getOwnerMetadata,
 } from '../store/localStore';
 import {
   filterRoster,
@@ -23,17 +23,21 @@ import {
   summariseStatus,
   type RosterRow,
 } from '../domain/roster';
+import { localDataLifecycleIdentity } from '../domain/personalData';
 import { playerResolutionMetaKey } from '../domain/syncEngine';
-import type { BalanceOut } from '../domain/types';
+import type { BalanceOut, LocalDataOwner } from '../domain/types';
 
 async function loadRosterRows(
   players: PlayerChoice[],
   cacheScope: string | null,
+  owner: LocalDataOwner | null,
 ): Promise<RosterRow[]> {
+  if (!owner || owner.scope !== cacheScope || !owner.isCurrent()) return [];
   const balancesByPlayer: Record<string, BalanceOut[]> = {};
   for (const player of players) {
     const balanceId = player.resolvedId ?? player.id;
-    const bal = await getBalances(balanceId, cacheScope);
+    const bal = await getBalances(balanceId, owner);
+    if (!owner.isCurrent()) return [];
     if (bal) balancesByPlayer[player.id] = bal.balances;
   }
 
@@ -41,10 +45,11 @@ async function loadRosterRows(
   // local player ids so hydrated server rows retain their pre-sync activity.
   const [localSessions, resolutions] = cacheScope
     ? await Promise.all([
-        getAllLocalRecords('sessions', cacheScope),
-        getMeta<Record<string, string>>(playerResolutionMetaKey(cacheScope)),
+        getAllLocalRecords('sessions', owner),
+        getOwnerMetadata<Record<string, string>>(playerResolutionMetaKey(cacheScope), owner),
       ])
     : [[], undefined];
+  if (!owner.isCurrent()) return [];
   const resolvedByLocalId = resolutions ?? {};
   const lastVisitByPlayer: Record<string, string | null> = {};
   for (const session of localSessions) {
@@ -75,27 +80,30 @@ async function loadRosterRows(
 }
 
 export function Players() {
-  const { cacheScope } = useReferenceData();
+  const { cacheScope, owner } = useReferenceData();
+  const identity = localDataLifecycleIdentity(owner);
   const players = useKnownPlayers();
-  const [rows, setRows] = useState<RosterRow[]>([]);
-  const [search, setSearch] = useState('');
-  const [loaded, setLoaded] = useState(false);
+  const [snapshot, setSnapshot] = useState<{ identity: string | null; rows: RosterRow[]; loaded: boolean }>({ identity: null, rows: [], loaded: false });
 
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const next = await loadRosterRows(players, cacheScope);
-      if (alive) {
-        setRows(next);
-        setLoaded(true);
+      const next = await loadRosterRows(players, cacheScope, owner);
+      if (alive && owner?.isCurrent()) {
+        setSnapshot({ identity, rows: next, loaded: true });
       }
     })();
     return () => {
       alive = false;
     };
-  }, [cacheScope, players]);
+  }, [cacheScope, identity, owner, players]);
 
-  const visible = useMemo(() => filterRoster(rows, search), [rows, search]);
+  const current = snapshot.identity === identity && owner?.isCurrent()
+    ? snapshot
+    : { identity, rows: [], loaded: false };
+  const [searchState, setSearchState] = useState({ identity: null as string | null, value: '' });
+  const search = searchState.identity === identity ? searchState.value : '';
+  const visible = useMemo(() => filterRoster(current.rows, search), [current.rows, search]);
 
   return (
     <section aria-label="Players" data-screen-body="players">
@@ -109,12 +117,12 @@ export function Players() {
         aria-label="Search players by name"
         placeholder="Search by name"
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => setSearchState({ identity, value: e.target.value })}
       />
 
-      {loaded && rows.length === 0 && <p role="status">No players yet.</p>}
-      {!loaded && <p role="status">Loading players…</p>}
-      {loaded && rows.length > 0 && visible.length === 0 && (
+      {current.loaded && current.rows.length === 0 && <p role="status">No players yet.</p>}
+      {!current.loaded && <p role="status">Loading players…</p>}
+      {current.loaded && current.rows.length > 0 && visible.length === 0 && (
         <p role="status">No players match “{search.trim()}”.</p>
       )}
 

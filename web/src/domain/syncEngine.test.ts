@@ -14,7 +14,23 @@ import {
   countUnsynced,
   getLastSuccessfulSync,
 } from '../store/localStore';
-import type { ActionResult, SyncAction, SyncResult } from './types';
+import { ContainerApiClient } from '../api/client';
+import type { ActionResult, LocalDataOwner, SyncAction, SyncResult } from './types';
+import { activateTestOwner } from '../setupTests';
+
+let owner: LocalDataOwner;
+
+function enqueueOwned(action: SyncAction) {
+  return enqueueAction(action, { owner });
+}
+
+function makeEngine(client: ReturnType<typeof makeMock>['client']): SyncEngine {
+  return new SyncEngine({
+    client,
+    getOwner: () => owner,
+    isOwnerCurrent: (candidate) => candidate === owner,
+  });
+}
 
 async function resetDb(): Promise<void> {
   await closeDb();
@@ -39,14 +55,65 @@ function makeMock(handler: (actions: SyncAction[]) => SyncResult | Promise<SyncR
 
 beforeEach(async () => {
   await resetDb();
+  owner = await activateTestOwner();
 });
 
 describe('Sync_Engine — integration capture→queue→sync→reconcile (task 8.11)', () => {
+  it('sends zero requests and leaves the queue unchanged when expiry wins at token capture', async () => {
+    let current = true;
+    owner = await activateTestOwner('expiring-owner', undefined, 1, () => current);
+    await enqueueOwned({
+      client_id: 'expires-before-send',
+      entity: 'session',
+      created_at: '2024-01-01T10:00:00.000Z',
+      payload: { player_id: 'p1' },
+    });
+    const fetchImpl = vi.fn();
+    const client = new ContainerApiClient({
+      baseUrl: 'https://api.funhouse.example',
+      getAuthSnapshot: () => {
+        current = false;
+        return { token: null, generation: 2 };
+      },
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const engine = new SyncEngine({
+      client,
+      getOwner: () => owner,
+      // Deliberately weaker injected predicate: owner.isCurrent remains mandatory.
+      isOwnerCurrent: () => true,
+    });
+
+    const result = await engine.flush();
+
+    expect(result.outcome).toBe('network-error');
+    expect(fetchImpl).not.toHaveBeenCalled();
+    current = true;
+    expect(await getAction('expires-before-send', owner)).toMatchObject({
+      status: 'unsynced',
+      attempt_count: 0,
+      storage_revision: 1,
+    });
+  });
+
+  it('never batches when owner.isCurrent is false even if the injected predicate is weaker', async () => {
+    owner = await activateTestOwner('stale-owner', undefined, 1, () => false);
+    const mock = makeMock(() => ({ results: [] }));
+    const engine = new SyncEngine({
+      client: mock.client,
+      getOwner: () => owner,
+      isOwnerCurrent: () => true,
+    });
+
+    expect(await engine.flush()).toMatchObject({ outcome: 'empty', attempted: 0 });
+    expect(mock.batches).toEqual([]);
+  });
+
   it('reconciles a mixed batch: applied/skipped removed, rejected retained with reason', async () => {
     // Simulate captures having enqueued actions.
-    await enqueueAction({ client_id: 'c1', entity: 'session', created_at: '2024-01-01T10:00:00.000Z', payload: { player_id: 'srv-1' } });
-    await enqueueAction({ client_id: 'c2', entity: 'payment', created_at: '2024-01-01T10:01:00.000Z', payload: { player_id: 'srv-1', amount_cents: 3000 } });
-    await enqueueAction({ client_id: 'c3', entity: 'consent', created_at: '2024-01-01T10:02:00.000Z', payload: { player_id: 'srv-1', consent_type: 'media' } });
+    await enqueueOwned({ client_id: 'c1', entity: 'session', created_at: '2024-01-01T10:00:00.000Z', payload: { player_id: 'srv-1' } });
+    await enqueueOwned({ client_id: 'c2', entity: 'payment', created_at: '2024-01-01T10:01:00.000Z', payload: { player_id: 'srv-1', amount_cents: 3000 } });
+    await enqueueOwned({ client_id: 'c3', entity: 'consent', created_at: '2024-01-01T10:02:00.000Z', payload: { player_id: 'srv-1', consent_type: 'media' } });
 
     const mock = makeMock(() => ({
       results: [
@@ -56,7 +123,7 @@ describe('Sync_Engine — integration capture→queue→sync→reconcile (task 8
       ] satisfies ActionResult[],
     }));
 
-    const engine = new SyncEngine({ client: mock.client });
+    const engine = makeEngine(mock.client);
     const result = await engine.flush();
 
     expect(result.outcome).toBe('ok');
@@ -64,44 +131,44 @@ describe('Sync_Engine — integration capture→queue→sync→reconcile (task 8
     expect(result.skipped).toBe(1);
     expect(result.rejected).toBe(1);
 
-    expect((await getAction('c1'))!.status).toBe('applied');
-    expect((await getAction('c2'))!.status).toBe('skipped');
-    const rejected = await getAction('c3');
+    expect((await getAction('c1', owner))!.status).toBe('applied');
+    expect((await getAction('c2', owner))!.status).toBe('skipped');
+    const rejected = await getAction('c3', owner);
     expect(rejected!.status).toBe('rejected');
     expect(rejected!.reason).toBe('duplicate consent');
 
     // Only the rejected action remains unsynced-excluded but retained; unsynced set empty.
-    expect(await countUnsynced()).toBe(0);
+    expect(await countUnsynced(owner)).toBe(0);
     // A 200 advances the last-successful-sync marker.
-    expect(await getLastSuccessfulSync()).not.toBeNull();
+    expect(await getLastSuccessfulSync(owner)).not.toBeNull();
   });
 
   it('retains the queue and reports network-error when POST /sync throws', async () => {
-    await enqueueAction({ client_id: 'n1', entity: 'session', created_at: '2024-01-01T10:00:00.000Z', payload: {} });
+    await enqueueOwned({ client_id: 'n1', entity: 'session', created_at: '2024-01-01T10:00:00.000Z', payload: {} });
     const mock = makeMock(() => {
       throw new Error('offline');
     });
-    const engine = new SyncEngine({ client: mock.client });
+    const engine = makeEngine(mock.client);
     const result = await engine.flush();
     expect(result.outcome).toBe('network-error');
-    expect(await countUnsynced()).toBe(1);
-    const stored = await getAction('n1');
+    expect(await countUnsynced(owner)).toBe(1);
+    const stored = await getAction('n1', owner);
     expect(stored!.status).toBe('unsynced');
     expect(stored!.attempt_count).toBe(1);
-    expect(await getLastSuccessfulSync()).toBeNull();
+    expect(await getLastSuccessfulSync(owner)).toBeNull();
   });
 
   it('includes live student_metrics actions in the batch and reconciles them (D1 resolved)', async () => {
     // D1 resolved: student_metrics is now a live /sync entity keyed on player_id.
     // Metrics enqueue as normal `unsynced` actions and must be transmitted and
     // reconciled like the other natural-key entities.
-    await enqueueAction({ client_id: 'm1', entity: 'student_metrics', created_at: '2024-01-01T10:00:00.000Z', payload: { player_id: 'srv-1', metric_type: 'typing_wpm', value: 42, measured_at: '2024-01-01T10:00:00.000Z' } });
-    await enqueueAction({ client_id: 's1', entity: 'session', created_at: '2024-01-01T10:00:00.000Z', payload: { player_id: 'srv-1' } });
+    await enqueueOwned({ client_id: 'm1', entity: 'student_metrics', created_at: '2024-01-01T10:00:00.000Z', payload: { player_id: 'srv-1', metric_type: 'typing_wpm', value: 42, measured_at: '2024-01-01T10:00:00.000Z' } });
+    await enqueueOwned({ client_id: 's1', entity: 'session', created_at: '2024-01-01T10:00:00.000Z', payload: { player_id: 'srv-1' } });
 
     const mock = makeMock((batch) => ({
       results: batch.map<ActionResult>((a) => ({ client_id: a.client_id, entity: a.entity, status: 'applied', record_id: null, reason: null })),
     }));
-    const engine = new SyncEngine({ client: mock.client });
+    const engine = makeEngine(mock.client);
     const result = await engine.flush();
 
     // The metrics action was transmitted alongside the session action...
@@ -113,16 +180,16 @@ describe('Sync_Engine — integration capture→queue→sync→reconcile (task 8
     expect((sentMetric.payload as { player_id: string }).player_id).toBe('srv-1');
     // ...and was reconciled applied like any other entity.
     expect(result.applied).toBe(2);
-    expect((await getAction('m1'))!.status).toBe('applied');
-    expect(await countUnsynced()).toBe(0);
+    expect((await getAction('m1', owner))!.status).toBe('applied');
+    expect(await countUnsynced(owner)).toBe(0);
   });
 
   it('resolves a metrics action captured for an offline-registered player (D2)', async () => {
     // A player registered offline; a metric captured for that local player id
     // must get the same D2 local-id rewrite session/payment get, ordered after
     // the player action.
-    await enqueueAction({ client_id: 'PLAYER', entity: 'player', created_at: '2024-01-01T09:00:00.000Z', payload: { first_name: 'Zia' } });
-    await enqueueAction({ client_id: 'METRIC', entity: 'student_metrics', created_at: '2024-01-01T09:00:05.000Z', payload: { player_id: 'PLAYER', metric_type: 'typing_accuracy', value: 96, measured_at: '2024-01-01T09:00:05.000Z' } });
+    await enqueueOwned({ client_id: 'PLAYER', entity: 'player', created_at: '2024-01-01T09:00:00.000Z', payload: { first_name: 'Zia' } });
+    await enqueueOwned({ client_id: 'METRIC', entity: 'student_metrics', created_at: '2024-01-01T09:00:05.000Z', payload: { player_id: 'PLAYER', metric_type: 'typing_accuracy', value: 96, measured_at: '2024-01-01T09:00:05.000Z' } });
 
     const mock = makeMock((batch) => ({
       results: batch.map<ActionResult>((a) => ({
@@ -133,7 +200,7 @@ describe('Sync_Engine — integration capture→queue→sync→reconcile (task 8
         reason: null,
       })),
     }));
-    const engine = new SyncEngine({ client: mock.client });
+    const engine = makeEngine(mock.client);
     const result = await engine.flush();
     expect(result.outcome).toBe('ok');
 
@@ -142,16 +209,16 @@ describe('Sync_Engine — integration capture→queue→sync→reconcile (task 8
     const phase2 = mock.batches[1];
     expect(phase2.map((a) => a.client_id)).toEqual(['METRIC']);
     expect((phase2[0].payload as { player_id: string }).player_id).toBe('SERVER-PLAYER-9');
-    expect(await countUnsynced()).toBe(0);
+    expect(await countUnsynced(owner)).toBe(0);
   });
 });
 
 describe('Sync_Engine — Dependency D2 local-id resolution (task 8.6)', () => {
   it('sends the player first, then resolves dependents player_id from the applied record_id', async () => {
     // A player registered offline: dependent actions reference the player action's client_id.
-    await enqueueAction({ client_id: 'PLAYER', entity: 'player', created_at: '2024-01-01T09:00:00.000Z', payload: { first_name: 'Ada' } });
-    await enqueueAction({ client_id: 'CONSENT', entity: 'consent', created_at: '2024-01-01T09:00:01.000Z', payload: { player_id: 'PLAYER', consent_type: 'media', granted: true } });
-    await enqueueAction({ client_id: 'SESSION', entity: 'session', created_at: '2024-01-01T09:00:02.000Z', payload: { player_id: 'PLAYER', session_type: 'lounge' } });
+    await enqueueOwned({ client_id: 'PLAYER', entity: 'player', created_at: '2024-01-01T09:00:00.000Z', payload: { first_name: 'Ada' } });
+    await enqueueOwned({ client_id: 'CONSENT', entity: 'consent', created_at: '2024-01-01T09:00:01.000Z', payload: { player_id: 'PLAYER', consent_type: 'media', granted: true } });
+    await enqueueOwned({ client_id: 'SESSION', entity: 'session', created_at: '2024-01-01T09:00:02.000Z', payload: { player_id: 'PLAYER', session_type: 'lounge' } });
 
     const mock = makeMock((batch) => ({
       results: batch.map<ActionResult>((a) => ({
@@ -163,7 +230,7 @@ describe('Sync_Engine — Dependency D2 local-id resolution (task 8.6)', () => {
       })),
     }));
 
-    const engine = new SyncEngine({ client: mock.client });
+    const engine = makeEngine(mock.client);
     const result = await engine.flush();
     expect(result.outcome).toBe('ok');
 
@@ -176,24 +243,24 @@ describe('Sync_Engine — Dependency D2 local-id resolution (task 8.6)', () => {
       expect((sent.payload as { player_id: string }).player_id).toBe('SERVER-PLAYER-1');
     }
 
-    expect(await countUnsynced()).toBe(0);
+    expect(await countUnsynced(owner)).toBe(0);
   });
 
   it('resolves a dependent captured after the player already synced (cross-flush, via stored mapping)', async () => {
-    await enqueueAction({ client_id: 'PLAYER', entity: 'player', created_at: '2024-01-01T09:00:00.000Z', payload: { first_name: 'Ben' } });
+    await enqueueOwned({ client_id: 'PLAYER', entity: 'player', created_at: '2024-01-01T09:00:00.000Z', payload: { first_name: 'Ben' } });
     const mock = makeMock((batch) => ({
       results: batch.map<ActionResult>((a) => ({ client_id: a.client_id, entity: a.entity, status: 'applied', record_id: 'SERVER-PLAYER-2', reason: null })),
     }));
-    const engine = new SyncEngine({ client: mock.client });
+    const engine = makeEngine(mock.client);
     await engine.flush(); // player applied, mapping persisted
 
     // A payment captured later still referencing the local player id.
-    await enqueueAction({ client_id: 'PAY', entity: 'payment', created_at: '2024-01-01T09:05:00.000Z', payload: { player_id: 'PLAYER', amount_cents: 5000 } });
+    await enqueueOwned({ client_id: 'PAY', entity: 'payment', created_at: '2024-01-01T09:05:00.000Z', payload: { player_id: 'PLAYER', amount_cents: 5000 } });
     await engine.flush();
 
     const payBatch = mock.batches.at(-1)!;
     expect((payBatch[0].payload as { player_id: string }).player_id).toBe('SERVER-PLAYER-2');
-    expect((await getAction('PAY'))!.status).toBe('applied');
+    expect((await getAction('PAY', owner))!.status).toBe('applied');
   });
 });
 

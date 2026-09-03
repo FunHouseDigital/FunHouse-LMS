@@ -8,8 +8,9 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { decodeJwtPayload } from '../domain/authManager';
-import type { PlayerOut, ProductOut, Session } from '../domain/types';
+import { localDataLifecycleIdentity } from '../domain/personalData';
+import { localDataScopeForSession } from '../domain/authManager';
+import type { LocalDataOwner, PlayerOut, ProductOut, Session } from '../domain/types';
 import { clearAuthenticatedResponseCaches } from '../pwa/authenticatedCaches';
 import {
   getCachedRead,
@@ -28,6 +29,7 @@ export interface ReferenceDataContextValue {
   lastRefreshedAt: string | null;
   revision: number;
   cacheScope: string | null;
+  owner: LocalDataOwner | null;
   playersCacheKey: string;
   productsCacheKey: string;
   refresh: () => Promise<void>;
@@ -42,6 +44,7 @@ const DEFAULT_VALUE: ReferenceDataContextValue = {
   lastRefreshedAt: null,
   revision: 0,
   cacheScope: null,
+  owner: null,
   playersCacheKey: 'players',
   productsCacheKey: 'products',
   refresh: async () => undefined,
@@ -61,14 +64,7 @@ function latestTimestamp(...timestamps: Array<string | undefined>): string | nul
 }
 
 export function sessionScopeKey(session: Session | null): string | null {
-  if (!session) return null;
-  const claims = decodeJwtPayload(session.access_token);
-  const subject = typeof claims?.sub === 'string' ? claims.sub.trim() : '';
-  if (subject === '') return null;
-  const school = typeof claims?.school_id === 'string' ? claims.school_id : 'no-school';
-  return ['v1', subject, session.role, session.location_id ?? 'no-location', school]
-    .map(encodeURIComponent)
-    .join(':');
+  return session ? localDataScopeForSession(session) : null;
 }
 
 function cacheKey(dataset: 'players' | 'products', scope: string | null): string {
@@ -76,8 +72,9 @@ function cacheKey(dataset: 'players' | 'products', scope: string | null): string
 }
 
 export function ReferenceDataProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated, session, client } = useAuth();
+  const { isAuthenticated, session, client, localDataOwner, isLocalDataOwnerCurrent } = useAuth();
   const cacheScope = useMemo(() => sessionScopeKey(session), [session]);
+  const lifecycleIdentity = localDataLifecycleIdentity(localDataOwner);
   const productsRequired = session?.role !== 'facilitator';
   const playersCacheKey = cacheKey('players', cacheScope);
   const productsCacheKey = cacheKey('products', cacheScope);
@@ -88,27 +85,28 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const requestGeneration = useRef(0);
-  const activeScope = useRef<string | null>(cacheScope);
+  const activeIdentity = useRef<string | null>(lifecycleIdentity);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const entitlementSequence = useRef(new Map<string, number>());
 
   // Invalidate network work synchronously when React renders a different account.
-  if (activeScope.current !== cacheScope) {
-    activeScope.current = cacheScope;
+  if (activeIdentity.current !== lifecycleIdentity) {
+    activeIdentity.current = lifecycleIdentity;
     requestGeneration.current += 1;
     refreshInFlight.current = null;
     entitlementSequence.current.clear();
   }
 
   const runRefresh = useCallback(async () => {
-    if (!isAuthenticated || !cacheScope) return;
+    if (!isAuthenticated || !cacheScope || !localDataOwner) return;
 
+    const owner = localDataOwner;
     const generation = requestGeneration.current;
     const [cachedPlayers, cachedProducts] = await Promise.all([
-      getCachedRead<PlayerOut[]>(playersCacheKey),
-      getCachedRead<ProductOut[]>(productsCacheKey),
+      getCachedRead<PlayerOut[]>(playersCacheKey, owner),
+      getCachedRead<ProductOut[]>(productsCacheKey, owner),
     ]);
-    if (generation !== requestGeneration.current || activeScope.current !== cacheScope) return;
+    if (!isLocalDataOwnerCurrent(owner) || generation !== requestGeneration.current || activeIdentity.current !== lifecycleIdentity) return;
 
     const hadPlayers = cachedPlayers !== undefined;
     const hadProducts = !productsRequired || cachedProducts !== undefined;
@@ -132,22 +130,22 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
       client.getPlayers(),
       productsRequired ? client.getProducts() : Promise.resolve([]),
     ]);
-    if (generation !== requestGeneration.current || activeScope.current !== cacheScope) return;
+    if (!isLocalDataOwnerCurrent(owner) || generation !== requestGeneration.current || activeIdentity.current !== lifecycleIdentity) return;
 
     const refreshedAt = new Date().toISOString();
     const playerWrite =
       playersResult.status === 'fulfilled'
         ? await Promise.allSettled([
-            writeCachedRead(playersCacheKey, playersResult.value, refreshedAt),
+            writeCachedRead(playersCacheKey, playersResult.value, owner, refreshedAt),
           ])
         : [];
     const productWrite =
       productsRequired && productsResult.status === 'fulfilled'
         ? await Promise.allSettled([
-            writeCachedRead(productsCacheKey, productsResult.value, refreshedAt),
+            writeCachedRead(productsCacheKey, productsResult.value, owner, refreshedAt),
           ])
         : [];
-    if (generation !== requestGeneration.current || activeScope.current !== cacheScope) return;
+    if (!isLocalDataOwnerCurrent(owner) || generation !== requestGeneration.current || activeIdentity.current !== lifecycleIdentity) return;
 
     const playersStored = playerWrite[0]?.status === 'fulfilled';
     const productsStored = !productsRequired || productWrite[0]?.status === 'fulfilled';
@@ -162,6 +160,8 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
     cacheScope,
     client,
     isAuthenticated,
+    isLocalDataOwnerCurrent,
+    localDataOwner,
     playersCacheKey,
     productsCacheKey,
     productsRequired,
@@ -189,8 +189,9 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
 
   const refreshPlayerEntitlements = useCallback(
     async (playerId: string): Promise<boolean> => {
-      if (!isAuthenticated || !cacheScope || !isOnline()) return false;
+      if (!isAuthenticated || !cacheScope || !localDataOwner || !isOnline()) return false;
 
+      const owner = localDataOwner;
       const generation = requestGeneration.current;
       const requestKey = `${cacheScope}:${playerId}`;
       const sequence = (entitlementSequence.current.get(requestKey) ?? 0) + 1;
@@ -199,16 +200,18 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
       try {
         const balances = await client.getPlayerEntitlements(playerId);
         if (
+          !isLocalDataOwnerCurrent(owner) ||
           generation !== requestGeneration.current ||
-          activeScope.current !== cacheScope ||
+          activeIdentity.current !== lifecycleIdentity ||
           entitlementSequence.current.get(requestKey) !== sequence
         ) {
           return false;
         }
-        await writeBalances(playerId, balances, undefined, cacheScope);
+        await writeBalances(playerId, balances, owner);
         if (
+          !isLocalDataOwnerCurrent(owner) ||
           generation !== requestGeneration.current ||
-          activeScope.current !== cacheScope ||
+          activeIdentity.current !== lifecycleIdentity ||
           entitlementSequence.current.get(requestKey) !== sequence
         ) {
           return false;
@@ -221,7 +224,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [cacheScope, client, isAuthenticated],
+    [cacheScope, client, isAuthenticated, isLocalDataOwnerCurrent, lifecycleIdentity, localDataOwner],
   );
 
   useEffect(() => {
@@ -236,7 +239,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
       return;
     }
     void refresh();
-  }, [cacheScope, isAuthenticated, refresh]);
+  }, [cacheScope, isAuthenticated, lifecycleIdentity, refresh]);
 
   useEffect(() => {
     if (!isAuthenticated || typeof window === 'undefined') return undefined;
@@ -264,6 +267,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
       lastRefreshedAt,
       revision,
       cacheScope,
+      owner: localDataOwner,
       playersCacheKey,
       productsCacheKey,
       refresh,
@@ -277,6 +281,7 @@ export function ReferenceDataProvider({ children }: { children: ReactNode }) {
       lastRefreshedAt,
       revision,
       cacheScope,
+      localDataOwner,
       playersCacheKey,
       productsCacheKey,
       refresh,

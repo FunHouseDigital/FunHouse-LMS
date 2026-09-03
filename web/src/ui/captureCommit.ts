@@ -1,74 +1,58 @@
-/**
- * Capture commit helper (Req 4.1, 4.2, 17.1). The single effectful step shared
- * by every capture screen: persist the builder's local record(s) — encrypting
- * personal-data fields at rest via the Crypto service — enqueue its
- * Sync_Action(s), and nudge the Sync_Engine.
- *
- * This is deliberately separate from the pure builders so the builders stay
- * effect-free (and property-testable) while all I/O lives here behind an
- * injectable seam. The capture path performs **no network call** on its own
- * (Req 4.4, 7.8, ...): `scheduler.onEnqueue()` only reaches the network when the
- * device is online, and the Sync_Engine is the sync path, not the capture path.
- */
 import type { CaptureResult } from '../domain/captures/types';
-import { encryptPayload, getSessionKey } from '../domain/crypto';
+import type { LocalDataOwner } from '../domain/types';
 import {
-  enqueueAction,
-  writeLocalRecord,
+  commitPreparedCapture,
+  prepareLocalRecord,
+  prepareQueueAction,
   type LocalRecord,
+  type PreparedLocalWrite,
 } from '../store/localStore';
-import {
-  notifyPlayerDirectoryChanged,
-  type SyncScheduler,
-} from '../domain/syncEngine';
+import { notifyPlayerDirectoryChanged, type SyncScheduler } from '../domain/syncEngine';
 
 export interface CommitDeps {
-  /** The Sync_Engine scheduler; `onEnqueue` registers/flushes (Req 5.1, 5.2). */
   scheduler?: Pick<SyncScheduler, 'onEnqueue'>;
-  /**
-   * The in-memory AES session key. Defaults to the Crypto service's current key.
-   * Pass `null` explicitly to force the no-key path in tests.
-   */
-  sessionKey?: CryptoKey | null;
-  /** Authenticated account/location/school scope owning persisted actions. */
-  scope?: string | null;
+  owner: LocalDataOwner;
 }
 
 /**
- * Persist + enqueue a capture result (write-before-confirm, Req 4.1). For each
- * record carrying `personal` data, the sensitive payload is AES-GCM encrypted
- * into an `enc` field (Req 17.1) while non-sensitive index keys stay in clear.
- * When no session key is available the personal fields are omitted rather than
- * written in plaintext (POPIA fail-safe, Req 17.1/17.2).
+ * Pre-encrypt the complete queue and every personal record body outside an IDB
+ * transaction, revalidate the immutable auth lifecycle, then atomically commit
+ * all touched local-record and queue rows. Any missing/stale key fails before
+ * mutation; scheduling and notifications happen only after `tx.done`.
  */
-export async function commitCapture(result: CaptureResult, deps: CommitDeps = {}): Promise<void> {
-  const key = deps.sessionKey !== undefined ? deps.sessionKey : getSessionKey();
-
-  for (const captureRecord of result.records) {
-    const record: LocalRecord = {
-      ...captureRecord.record,
-      ...(deps.scope ? { sync_scope: deps.scope } : {}),
-    };
-    if (captureRecord.personal) {
-      if (key) {
-        record.enc = await encryptPayload(key, captureRecord.personal);
-      }
-      // No key → do not persist personal fields in the clear (fail-safe).
-    }
-    await writeLocalRecord(captureRecord.store, record);
-    if (captureRecord.store === 'players') {
-      notifyPlayerDirectoryChanged(deps.scope ?? null);
-    }
+export async function commitCapture(result: CaptureResult, deps: CommitDeps): Promise<void> {
+  const owner = deps.owner;
+  if (!owner || !owner.isCurrent()) {
+    throw new Error('Authenticated local-data owner key is unavailable');
   }
 
-  for (const captureAction of result.actions) {
-    await enqueueAction(captureAction.action, {
-      ...(captureAction.status ? { status: captureAction.status } : {}),
-      ...(deps.scope ? { scope: deps.scope } : {}),
-    });
-  }
+  const records: PreparedLocalWrite[] = await Promise.all(
+    result.records.map(async (captureRecord) => {
+      const record: LocalRecord = {
+        ...captureRecord.record,
+        sync_scope: owner.scope,
+      };
+      return prepareLocalRecord(
+        captureRecord.store,
+        record,
+        captureRecord.personal,
+        owner,
+      );
+    }),
+  );
+  const actions = await Promise.all(
+    result.actions.map((captureAction) =>
+      prepareQueueAction(captureAction.action, captureAction.status, owner),
+    ),
+  );
 
-  if (deps.scheduler) {
-    await deps.scheduler.onEnqueue();
+  if (!owner.isCurrent()) {
+    throw new Error('Authenticated local-data owner changed before capture commit');
   }
+  await commitPreparedCapture(records, actions, owner);
+
+  if (records.some((item) => item.store === 'players')) {
+    notifyPlayerDirectoryChanged(owner.scope);
+  }
+  if (deps.scheduler) await deps.scheduler.onEnqueue();
 }

@@ -23,8 +23,10 @@
  * a trust decision on the decoded role beyond which local screens to show — the
  * server independently re-authorises every request against the verified token.
  */
-import type { LoginResponse, Session } from './types';
+import type { LocalDataOwner, LoginResponse, Session } from './types';
 import {
+  activateOwnerDataKey,
+  migrateScopedLegacyData,
   deleteAuthMetadataIfOwnedBy,
   getAuthMetadata,
   getMeta,
@@ -33,6 +35,7 @@ import {
   SESSION_META_KEY,
   SESSION_OWNER_META_KEY,
   setMeta,
+  withLocalDataMutationLock,
 } from '../store/localStore';
 import {
   clearSessionKey,
@@ -42,6 +45,7 @@ import {
   deriveKey,
   hasSessionKey,
   setSessionKey,
+  sha256Base64Url,
 } from './crypto';
 import { UnauthorizedError } from '../api/client';
 
@@ -155,7 +159,11 @@ function isCoherentFreshSession(value: unknown, now: number): value is Session {
     typeof candidate.expires_at !== 'string' ||
     typeof candidate.role !== 'string' ||
     !(VALID_ROLES as readonly string[]).includes(candidate.role) ||
-    (candidate.location_id !== null && typeof candidate.location_id !== 'string')
+    (candidate.location_id !== null && typeof candidate.location_id !== 'string') ||
+    typeof candidate.sub !== 'string' ||
+    candidate.sub.trim() === '' ||
+    (candidate.school_id !== null && typeof candidate.school_id !== 'string') ||
+    (candidate.local_data_scope !== undefined && typeof candidate.local_data_scope !== 'string')
   ) {
     return false;
   }
@@ -166,6 +174,7 @@ function isCoherentFreshSession(value: unknown, now: number): value is Session {
   const tokenExpirySeconds = claims?.exp;
   const tokenRole = claims?.role;
   const tokenLocation = claims?.location_id;
+  const tokenSchool = claims?.school_id;
   const responseExpiryMs = new Date(candidate.expires_at).getTime();
 
   return (
@@ -181,8 +190,11 @@ function isCoherentFreshSession(value: unknown, now: number): value is Session {
     responseExpiryMs > now &&
     Math.abs(tokenExpirySeconds * 1000 - responseExpiryMs) < JWT_EXPIRY_TOLERANCE_MS &&
     tokenRole === candidate.role &&
+    subject === candidate.sub &&
     (typeof tokenLocation === 'string' || tokenLocation === null) &&
-    tokenLocation === candidate.location_id
+    tokenLocation === candidate.location_id &&
+    (typeof tokenSchool === 'string' || tokenSchool === null || tokenSchool === undefined) &&
+    (tokenSchool ?? null) === candidate.school_id
   );
 }
 
@@ -297,6 +309,39 @@ export function decodeLocationFromJwt(token: string): string | null {
   return typeof loc === 'string' ? loc : null;
 }
 
+function canonicalScopeClaims(session: Pick<Session, 'sub' | 'role' | 'location_id' | 'school_id'>): string {
+  return JSON.stringify([
+    session.sub,
+    session.role,
+    session.location_id,
+    session.school_id,
+  ]);
+}
+
+/** Stable opaque routing scope derived from the exact canonical JWT claims. */
+export async function deriveLocalDataScope(
+  session: Pick<Session, 'sub' | 'role' | 'location_id' | 'school_id'>,
+): Promise<string> {
+  return `v2:${await sha256Base64Url(canonicalScopeClaims(session))}`;
+}
+
+/** Internal exact legacy scope used only to prove attribution during migration. */
+function legacyLocalDataScopeForSession(
+  session: Pick<Session, 'sub' | 'role' | 'location_id' | 'school_id'>,
+): string {
+  return ['v1', session.sub, session.role, session.location_id ?? 'no-location', session.school_id ?? 'no-school']
+    .map(encodeURIComponent)
+    .join(':');
+}
+
+/** Opaque scope is constructed before a Session enters runtime state. */
+export function localDataScopeForSession(session: Session): string {
+  if (!session.local_data_scope.startsWith('v2:')) {
+    throw new Error('Authenticated local-data scope is unavailable');
+  }
+  return session.local_data_scope;
+}
+
 /** Parse an ISO `expires_at` to epoch ms; `NaN` when unparseable. */
 function expiryMs(session: Session): number {
   return new Date(session.expires_at).getTime();
@@ -315,6 +360,7 @@ export class AuthManager {
   private session: Session | null = null;
   private pendingRevocation: Promise<void> = Promise.resolve();
   private lifecycleGeneration = 0;
+  private localDataOwner: LocalDataOwner | null = null;
   private activeSessionMarker: string | null = null;
 
   constructor(options: AuthManagerOptions) {
@@ -329,24 +375,24 @@ export class AuthManager {
    * server validity; the next protected request remains server-authoritative.
    */
   async restoreSession(): Promise<Session | null> {
-    if (this.session && this.isAuthenticated()) return this.session;
+    if (this.session && this.localDataOwner?.isCurrent()) return this.session;
 
     const restoreGeneration = this.lifecycleGeneration;
     await this.pendingRevocation;
     if (this.lifecycleGeneration !== restoreGeneration) {
-      return this.session && this.isAuthenticated() ? this.session : null;
+      return this.session && this.localDataOwner?.isCurrent() ? this.session : null;
     }
 
     try {
-      return await withAuthSessionLock(async () => {
+      return await withAuthSessionLock(async () => withLocalDataMutationLock(async () => {
         if (this.lifecycleGeneration !== restoreGeneration) {
-          return this.session && this.isAuthenticated() ? this.session : null;
+          return this.session && this.localDataOwner?.isCurrent() ? this.session : null;
         }
 
         const restoreMarker = readActiveSessionMarker();
         const metadata = await getAuthMetadata();
         if (this.lifecycleGeneration !== restoreGeneration) {
-          return this.session && this.isAuthenticated() ? this.session : null;
+          return this.session && this.localDataOwner?.isCurrent() ? this.session : null;
         }
 
         if (restoreMarker === null) {
@@ -388,34 +434,118 @@ export class AuthManager {
             removeSessionMarker(restoreMarker);
             await deleteAuthMetadataIfOwnedBy(restoreMarker);
           }
-          return this.session && this.isAuthenticated() ? this.session : null;
+          return this.session && this.localDataOwner?.isCurrent() ? this.session : null;
+        }
+
+        const expectedScope = await deriveLocalDataScope(restored);
+        if (
+          restored.local_data_scope !== undefined &&
+          restored.local_data_scope !== expectedScope
+        ) {
+          this.invalidateLocalLifecycle();
+          removeSessionMarker(restoreMarker);
+          await deleteAuthMetadataIfOwnedBy(restoreMarker);
+          return null;
+        }
+        const normalizedRestored: Session = {
+          ...restored,
+          local_data_scope: expectedScope,
+        };
+        if (restored.local_data_scope === undefined) {
+          const upgraded = await encryptPayload(metadata.sessionKey, normalizedRestored);
+          if (
+            this.lifecycleGeneration !== restoreGeneration ||
+            readActiveSessionMarker() !== restoreMarker ||
+            expiryMs(normalizedRestored) <= this.nowFn()
+          ) return null;
+          await replaceAuthMetadata(upgraded, metadata.sessionKey, restoreMarker);
+        }
+
+        const ownerScope = localDataScopeForSession(normalizedRestored);
+        const legacyScope = legacyLocalDataScopeForSession(normalizedRestored);
+        const ownerKey = await activateOwnerDataKey(normalizedRestored.sub);
+        const migrationOwner: LocalDataOwner = Object.freeze({
+          subject: normalizedRestored.sub,
+          scope: ownerScope,
+          keyId: ownerKey.keyId,
+          key: ownerKey.key,
+          generation: restoreGeneration,
+          isCurrent: () => (
+            this.lifecycleGeneration === restoreGeneration &&
+            readActiveSessionMarker() === restoreMarker &&
+            expiryMs(normalizedRestored) > this.nowFn()
+          ),
+        });
+        try {
+          await migrateScopedLegacyData(migrationOwner, metadata.sessionKey, {
+            legacyScope,
+            mutationLockHeld: true,
+          });
+        } catch (error) {
+          if (!migrationOwner.isCurrent()) return null;
+          throw error;
         }
 
         // Compare-and-commit: a local revoke or a lock-less peer's marker
         // replacement during any await wins. No await occurs after this guard.
         if (
           this.lifecycleGeneration !== restoreGeneration ||
-          readActiveSessionMarker() !== metadata.owner
+          readActiveSessionMarker() !== metadata.owner ||
+          expiryMs(normalizedRestored) <= this.nowFn()
         ) {
-          return this.session && this.isAuthenticated() ? this.session : null;
+          return this.session && this.localDataOwner?.isCurrent() ? this.session : null;
         }
 
         this.lifecycleGeneration += 1;
         this.activeSessionMarker = metadata.owner;
         setSessionKey(metadata.sessionKey);
-        this.session = restored;
-        return restored;
-      });
+        this.session = normalizedRestored;
+        let publishedOwner!: LocalDataOwner;
+        publishedOwner = Object.freeze({
+          subject: normalizedRestored.sub,
+          scope: ownerScope,
+          keyId: ownerKey.keyId,
+          key: ownerKey.key,
+          generation: this.lifecycleGeneration,
+          isCurrent: () => (
+            this.isLocalDataOwnerCurrent(publishedOwner) &&
+            this.isAuthenticated() &&
+            this.activeSessionMarker === metadata.owner &&
+            readActiveSessionMarker() === metadata.owner
+          ),
+        });
+        this.localDataOwner = publishedOwner;
+        return normalizedRestored;
+      }));
     } catch {
       // Storage/lock failures are fail-closed. Ownership is unknown here, so
       // leave durable metadata for an owner-aware retry rather than deleting it.
-      return this.session && this.isAuthenticated() ? this.session : null;
+      return this.session && this.localDataOwner?.isCurrent() ? this.session : null;
     }
   }
 
   /** The in-memory authenticated session, or `null`. */
   getSession(): Session | null {
     return this.session;
+  }
+
+  /** Immutable capability for the active owner's encrypted local data. */
+  getLocalDataOwner(): LocalDataOwner | null {
+    return this.localDataOwner;
+  }
+
+  /** Exact lifecycle/key/scope check used after every asynchronous boundary. */
+  isLocalDataOwnerCurrent(owner: LocalDataOwner | null | undefined): owner is LocalDataOwner {
+    return Boolean(
+      owner &&
+      this.localDataOwner &&
+      owner.generation === this.lifecycleGeneration &&
+      owner.generation === this.localDataOwner.generation &&
+      owner.subject === this.localDataOwner.subject &&
+      owner.scope === this.localDataOwner.scope &&
+      owner.keyId === this.localDataOwner.keyId &&
+      owner.key === this.localDataOwner.key,
+    );
   }
 
   /** Capture the token and lifecycle identity atomically at request start. */
@@ -471,7 +601,11 @@ export class AuthManager {
    * Only returned while the token is present and unexpired (Req 1.5).
    */
   getToken(now: number = this.nowFn()): string | null {
-    if (!this.session) return null;
+    if (
+      !this.session ||
+      this.activeSessionMarker === null ||
+      readActiveSessionMarker() !== this.activeSessionMarker
+    ) return null;
     return expiryMs(this.session) > now ? this.session.access_token : null;
   }
 
@@ -510,6 +644,7 @@ export class AuthManager {
     if (this.lifecycleGeneration !== loginGeneration) {
       return { ok: false, kind: 'invalid_credentials' };
     }
+    const loginObservedMarker = readActiveSessionMarker();
 
     let response: LoginResponse;
     try {
@@ -525,16 +660,32 @@ export class AuthManager {
       return { ok: false, kind: 'invalid_credentials' };
     }
 
+    const claims = decodeJwtPayload(response.access_token);
     const role = decodeRoleFromJwt(response.access_token);
     const location_id = decodeLocationFromJwt(response.access_token);
-    if (role === null) {
+    const sub = typeof claims?.sub === 'string' ? claims.sub.trim() : '';
+    const school_id = typeof claims?.school_id === 'string' ? claims.school_id : null;
+    if (role === null || sub === '') {
       return { ok: false, kind: 'invalid_credentials' };
+    }
+    const sessionClaims = {
+      role,
+      location_id,
+      sub,
+      school_id,
+    };
+    let localDataScope: string;
+    try {
+      localDataScope = await deriveLocalDataScope(sessionClaims);
+    } catch (error) {
+      this.invalidateLocalLifecycle();
+      throw new SecureStorageUnavailableError(error);
     }
     const session: Session = {
       access_token: response.access_token,
       expires_at: String(response.expires_at),
-      role,
-      location_id,
+      ...sessionClaims,
+      local_data_scope: localDataScope,
     };
     if (!isCoherentFreshSession(session, this.nowFn())) {
       return { ok: false, kind: 'invalid_credentials' };
@@ -542,8 +693,12 @@ export class AuthManager {
 
     let loginOwner: string | null = null;
     try {
-      await withAuthSessionLock(async () => {
+      await withAuthSessionLock(async () => withLocalDataMutationLock(async () => {
         this.assertLifecycle(loginGeneration);
+        if (readActiveSessionMarker() !== loginObservedMarker) {
+          throw new StaleAuthLifecycleError();
+        }
+        const observedMarker = loginObservedMarker;
 
         let salt = await getMeta<string>(CRYPTO_SALT_META_KEY);
         this.assertLifecycle(loginGeneration);
@@ -559,6 +714,35 @@ export class AuthManager {
         this.assertLifecycle(loginGeneration);
         const encrypted = await encryptPayload(key, session);
         this.assertLifecycle(loginGeneration);
+        const ownerScope = localDataScopeForSession(session);
+        const legacyScope = legacyLocalDataScopeForSession(session);
+        const ownerKey = await activateOwnerDataKey(session.sub);
+        const migrationOwner: LocalDataOwner = Object.freeze({
+          subject: session.sub,
+          scope: ownerScope,
+          keyId: ownerKey.keyId,
+          key: ownerKey.key,
+          generation: loginGeneration,
+          isCurrent: () => (
+            this.lifecycleGeneration === loginGeneration &&
+            readActiveSessionMarker() === observedMarker &&
+            expiryMs(session) > this.nowFn()
+          ),
+        });
+        try {
+          await migrateScopedLegacyData(migrationOwner, key, {
+            legacyScope,
+            mutationLockHeld: true,
+          });
+        } catch (error) {
+          if (!migrationOwner.isCurrent()) throw new StaleAuthLifecycleError();
+          throw error;
+        }
+        this.assertLifecycle(loginGeneration);
+        if (
+          readActiveSessionMarker() !== observedMarker ||
+          expiryMs(session) <= this.nowFn()
+        ) throw new StaleAuthLifecycleError();
         loginOwner = createSessionMarker();
         const attemptOwner = loginOwner;
 
@@ -566,8 +750,9 @@ export class AuthManager {
         // pair has no await: old contexts receive the removal event, while an
         // absent-marker cleanup can only have observed the previous owner.
         this.session = null;
+        this.localDataOwner = null;
         clearSessionKey();
-        const replacedMarker = readActiveSessionMarker();
+        const replacedMarker = observedMarker;
         removeSessionMarker(replacedMarker);
         markSessionActive(attemptOwner);
         this.activeSessionMarker = null;
@@ -584,7 +769,22 @@ export class AuthManager {
         this.activeSessionMarker = attemptOwner;
         setSessionKey(key);
         this.session = session;
-      });
+        let publishedOwner!: LocalDataOwner;
+        publishedOwner = Object.freeze({
+          subject: session.sub,
+          scope: ownerScope,
+          keyId: ownerKey.keyId,
+          key: ownerKey.key,
+          generation: this.lifecycleGeneration,
+          isCurrent: () => (
+            this.isLocalDataOwnerCurrent(publishedOwner) &&
+            this.isAuthenticated() &&
+            this.activeSessionMarker === attemptOwner &&
+            readActiveSessionMarker() === attemptOwner
+          ),
+        });
+        this.localDataOwner = publishedOwner;
+      }));
       return { ok: true, session };
     } catch (error) {
       // This attempt can remove only its own marker/metadata. If a peer has
@@ -617,6 +817,7 @@ export class AuthManager {
   private invalidateLocalLifecycle(): void {
     this.lifecycleGeneration += 1;
     this.session = null;
+    this.localDataOwner = null;
     this.activeSessionMarker = null;
     clearSessionKey();
   }
@@ -624,12 +825,12 @@ export class AuthManager {
   private queuePersistedSessionCleanup(expectedOwner: string | null): void {
     this.pendingRevocation = this.pendingRevocation.then(async () => {
       try {
-        await withAuthSessionLock(async () => {
+        await withAuthSessionLock(async () => withLocalDataMutationLock(async () => {
           // Compare-and-remove runs under the same cross-context lock as marker
           // replacement; an old M cleanup therefore cannot remove marker N.
           removeSessionMarker(expectedOwner);
           await deleteAuthMetadataIfOwnedBy(expectedOwner);
-        });
+        }));
       } catch {
         // Best-effort cleanup is retried by a later absent-marker startup.
       }

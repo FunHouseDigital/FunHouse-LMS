@@ -13,11 +13,11 @@ import {
   playerResolutionMetaKey,
   subscribePlayerDirectoryChanged,
 } from '../domain/syncEngine';
-import type { PlayerOut } from '../domain/types';
+import type { LocalDataOwner, PlayerOut } from '../domain/types';
 import {
   getAllLocalRecords,
   getCachedRead,
-  getMeta,
+  getOwnerMetadata,
   type LocalRecord,
 } from '../store/localStore';
 import { useReferenceData } from '../state/referenceDataState';
@@ -39,12 +39,13 @@ interface LocalPlayerPersonal {
 export interface LoadKnownPlayersOptions {
   playersCacheKey: string;
   cacheScope: string | null;
+  owner: LocalDataOwner | null;
   includeLocal?: boolean;
 }
 
-async function localPlayerName(record: LocalRecord): Promise<string> {
+async function localPlayerName(record: LocalRecord, owner: LocalDataOwner): Promise<string> {
   try {
-    const personal = await readPersonalData<LocalPlayerPersonal>(record);
+    const personal = await readPersonalData<LocalPlayerPersonal>(record, owner, 'players');
     const name = typeof personal?.name === 'string' ? personal.name.trim() : '';
     return name || 'Name unavailable';
   } catch {
@@ -62,9 +63,12 @@ async function localPlayerName(record: LocalRecord): Promise<string> {
 export async function loadKnownPlayers({
   playersCacheKey,
   cacheScope,
+  owner,
   includeLocal = true,
 }: LoadKnownPlayersOptions): Promise<PlayerChoice[]> {
-  const cached = await getCachedRead<PlayerOut[]>(playersCacheKey);
+  if (!owner || owner.scope !== cacheScope || !owner.isCurrent()) return [];
+  const cached = await getCachedRead<PlayerOut[]>(playersCacheKey, owner);
+  if (!owner.isCurrent()) return [];
   const roster: PlayerChoice[] = (cached?.data ?? []).map((player) => ({
     id: player.id,
     name: playerName(player),
@@ -73,9 +77,10 @@ export async function loadKnownPlayers({
   if (!includeLocal || !cacheScope) return roster;
 
   const [localRecords, resolutions] = await Promise.all([
-    getAllLocalRecords('players', cacheScope),
-    getMeta<Record<string, string>>(playerResolutionMetaKey(cacheScope)),
+    getAllLocalRecords('players', owner),
+    getOwnerMetadata<Record<string, string>>(playerResolutionMetaKey(cacheScope), owner),
   ]);
+  if (!owner.isCurrent()) return [];
   const resolvedByLocalId = resolutions ?? {};
   const serverIds = new Set(roster.map((player) => player.id));
 
@@ -86,15 +91,18 @@ export async function loadKnownPlayers({
       if (serverIds.has(localId) || (resolvedId && serverIds.has(resolvedId))) {
         return null;
       }
+      const name = await localPlayerName(record, owner);
+      if (!owner.isCurrent()) return null;
       return {
         id: localId,
-        name: await localPlayerName(record),
+        name,
         source: 'local',
         ...(resolvedId ? { resolvedId } : {}),
       };
     }),
   );
 
+  if (!owner.isCurrent()) return [];
   return [
     ...roster,
     ...localChoices.filter((choice): choice is PlayerChoice => choice !== null),
@@ -122,8 +130,8 @@ export function useKnownPlayersState(
   options: { includeLocal?: boolean } = {},
 ): KnownPlayersState {
   const { includeLocal = true } = options;
-  const { revision, playersCacheKey, cacheScope } = useReferenceData();
-  const stateKey = `${playersCacheKey}\u0000${cacheScope ?? ''}\u0000${String(includeLocal)}`;
+  const { revision, playersCacheKey, cacheScope, owner } = useReferenceData();
+  const stateKey = `${playersCacheKey}\u0000${cacheScope ?? ''}\u0000${owner?.generation ?? ''}\u0000${owner?.keyId ?? ''}\u0000${String(includeLocal)}`;
   const [snapshot, setSnapshot] = useState<KnownPlayersSnapshot>({
     key: stateKey,
     players: [],
@@ -136,9 +144,9 @@ export function useKnownPlayersState(
     let sequence = 0;
     const reload = () => {
       const request = ++sequence;
-      void loadKnownPlayers({ playersCacheKey, cacheScope, includeLocal })
+      void loadKnownPlayers({ playersCacheKey, cacheScope, owner, includeLocal })
         .then((loaded) => {
-          if (alive && request === sequence) {
+          if (alive && request === sequence && (!owner || owner.isCurrent())) {
             setSnapshot({
               key: stateKey,
               players: loaded,
@@ -148,7 +156,7 @@ export function useKnownPlayersState(
           }
         })
         .catch(() => {
-          if (alive && request === sequence) {
+          if (alive && request === sequence && (!owner || owner.isCurrent())) {
             setSnapshot((current) =>
               current.key === stateKey
                 ? { ...current, loaded: true, error: true }
@@ -168,9 +176,9 @@ export function useKnownPlayersState(
       alive = false;
       unsubscribe();
     };
-  }, [cacheScope, includeLocal, playersCacheKey, revision, stateKey]);
+  }, [cacheScope, includeLocal, owner, playersCacheKey, revision, stateKey]);
 
-  if (snapshot.key !== stateKey) {
+  if (snapshot.key !== stateKey || (owner && !owner.isCurrent())) {
     return { players: [], loaded: false, error: false };
   }
   return {

@@ -10,9 +10,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../state/authState';
 import { useReferenceData } from '../state/referenceDataState';
+import { localDataLifecycleIdentity } from '../domain/personalData';
 import { getActionsByStatus } from '../store/localStore';
 import { mergePlayerDetail, type LocalPlayerRecords, type MergedPlayerDetail } from '../domain/roster';
-import type { PlayerHistory, StoredSyncAction } from '../domain/types';
+import type { LocalDataOwner, PlayerHistory, StoredSyncAction } from '../domain/types';
 import { centsToRand } from '../domain/revenue';
 
 const UNKNOWN_VALUE = 'Unknown';
@@ -27,10 +28,10 @@ const EMPTY_HISTORY = (playerId: string): PlayerHistory => ({
 /** Gather this player's locally captured, not-yet-synced records from the queue. */
 async function localUnsyncedFor(
   playerId: string,
-  scope: string | null,
+  owner: LocalDataOwner | null,
 ): Promise<LocalPlayerRecords> {
-  if (!scope) return {};
-  const unsynced: StoredSyncAction[] = await getActionsByStatus('unsynced', scope);
+  if (!owner) return {};
+  const unsynced: StoredSyncAction[] = await getActionsByStatus('unsynced', owner);
   const forPlayer = unsynced.filter((a) => a.player_id === playerId || (a.payload as Record<string, unknown>)?.player_id === playerId);
   return {
     sessions: forPlayer.filter((a) => a.entity === 'session').map((a) => ({ ...a.payload, __local: true, client_id: a.client_id, created_at: a.created_at })),
@@ -122,6 +123,7 @@ function PendingBadge({ local }: { local: boolean }) {
 type HistoryLoadStatus = 'loading' | 'success' | 'error';
 
 interface HistoryViewState {
+  identity: string | null;
   status: HistoryLoadStatus;
   merged: MergedPlayerDetail | null;
 }
@@ -129,15 +131,18 @@ interface HistoryViewState {
 export function PlayerDetail() {
   const { id = '' } = useParams();
   const { client } = useAuth();
-  const { cacheScope } = useReferenceData();
+  const { cacheScope, owner } = useReferenceData();
+  const identity = localDataLifecycleIdentity(owner);
   const [history, setHistory] = useState<HistoryViewState>({
+    identity: null,
     status: 'loading',
     merged: null,
   });
 
   useEffect(() => {
+    if (!owner || !owner.isCurrent()) return undefined;
     let alive = true;
-    setHistory({ status: 'loading', merged: null });
+    setHistory({ identity, status: 'loading', merged: null });
     void (async () => {
       let server = EMPTY_HISTORY(id);
       let status: HistoryLoadStatus = 'success';
@@ -148,20 +153,23 @@ export function PlayerDetail() {
       }
       let local: LocalPlayerRecords = {};
       try {
-        local = await localUnsyncedFor(id, cacheScope);
+        local = await localUnsyncedFor(id, owner);
       } catch {
         // A local read failure must not hide history already returned by the server.
       }
-      if (alive) {
-        setHistory({ status, merged: mergePlayerDetail(server, local) });
+      if (alive && owner.isCurrent()) {
+        setHistory({ identity, status, merged: mergePlayerDetail(server, local) });
       }
     })();
     return () => {
       alive = false;
     };
-  }, [cacheScope, id, client]);
+  }, [cacheScope, id, client, identity, owner]);
 
-  const { merged, status } = history;
+  const visibleHistory: HistoryViewState = history.identity === identity && owner?.isCurrent()
+    ? history
+    : { identity, status: 'loading', merged: null };
+  const { merged, status } = visibleHistory;
 
   const totals = useMemo(() => {
     if (!merged) return { sessions: 0, payments: 0, draws: 0 };

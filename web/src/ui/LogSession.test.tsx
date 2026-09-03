@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../state/authState';
+import { ReferenceDataProvider } from '../state/referenceDataState';
 import { SyncStatusProvider } from '../state/syncState';
 import { ServicesProvider } from '../state/servicesState';
 import { LogSession } from './LogSession';
@@ -65,15 +66,20 @@ const BALANCE: BalanceOut = {
 async function renderLogSession() {
   const am = new AuthManager({ loginFn: async () => managerResponse() });
   await am.login('loyiso', 'secret');
+  const owner = am.getLocalDataOwner()!;
+  await writeCachedRead<PlayerOut[]>(`players:${owner.scope}`, [PLAYER], owner);
+  await writeBalances(PLAYER.id, [BALANCE], owner);
   render(
     <AuthProvider authManager={am}>
-      <SyncStatusProvider>
+      <ReferenceDataProvider>
+        <SyncStatusProvider>
         <ServicesProvider scheduler={{ onEnqueue: async () => {} }}>
           <MemoryRouter>
             <LogSession />
           </MemoryRouter>
         </ServicesProvider>
-      </SyncStatusProvider>
+        </SyncStatusProvider>
+      </ReferenceDataProvider>
     </AuthProvider>,
   );
 }
@@ -82,8 +88,6 @@ describe('Log Session screen (Req 7.1–7.6, 8.1)', () => {
   beforeEach(async () => {
     await resetDb();
     clearSessionKey();
-    await writeCachedRead<PlayerOut[]>('players', [PLAYER]);
-    await writeBalances(PLAYER.id, [BALANCE]);
   });
 
   it('presents player, console, duration, and payment controls (Req 7.1–7.5)', async () => {

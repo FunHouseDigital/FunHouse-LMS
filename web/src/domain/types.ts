@@ -51,16 +51,21 @@ export interface SyncAction<P = Record<string, unknown>> {
   payload: P;
 }
 
-/** A `SyncAction` as persisted in the Local_Store `sync_queue`. */
+/**
+ * A decrypted queue action used by the domain layer. This is deliberately not
+ * the IndexedDB row shape: queue bodies are encrypted before persistence.
+ */
 export interface StoredSyncAction<P = Record<string, unknown>> extends SyncAction<P> {
-  /** Authenticated account/location/school scope that owns this offline action. */
+  /** Stable authenticated account/location/school owner scope. */
   sync_scope?: string;
   status: SyncStatus;
-  /** Set when `status === 'rejected'` (Req 5.6). */
+  /** Decrypted only at an authorised display/sync boundary. */
   reason?: string;
-  /** Mirror of `payload.player_id` for the `by_player` index (Req 8.2). */
+  /** In-memory mirror derived from the decrypted payload. */
   player_id?: string;
   attempt_count: number;
+  /** Monotonic encrypted-at-rest revision used for guarded queue updates. */
+  storage_revision: number;
 }
 
 /** A single per-action result from the `POST /sync` response. */
@@ -241,6 +246,28 @@ export interface Session {
   expires_at: string;
   role: 'manager' | 'founder' | 'facilitator';
   location_id: string | null;
+  /** Validated JWT subject; retained only inside encrypted session state/in memory. */
+  sub: string;
+  /** Exact school authorisation claim; `null` when the token has none. */
+  school_id: string | null;
+  /** Stable opaque digest of the exact canonical authorization claims. */
+  local_data_scope: string;
+}
+
+/**
+ * Immutable capability for one authenticated owner's encrypted local data.
+ * The CryptoKey is never sent to, or made available from, the service worker.
+ */
+export interface LocalDataOwner {
+  /** Stable JWT subject that owns the durable device data key. */
+  readonly subject: string;
+  /** Exact authorisation scope bound into every row and encryption AAD. */
+  readonly scope: string;
+  readonly keyId: string;
+  readonly key: CryptoKey;
+  readonly generation: number;
+  /** Runtime-only lifecycle authority. It is never persisted or cloned. */
+  readonly isCurrent: () => boolean;
 }
 
 /** Device/meta values held in the `meta` store. */
@@ -252,8 +279,17 @@ export interface Meta {
 
 // ---- Encrypted-at-rest envelope for personal data (Req 17.1) ----
 
-/** AES-GCM envelope: both fields are base64-encoded. */
+/** Legacy AES-GCM envelope used only by password-derived session encryption. */
 export interface EncryptedField {
+  iv: string;
+  ciphertext: string;
+}
+
+/** Versioned owner-data envelope. All values are safe persistence metadata. */
+export interface EncryptedEnvelope {
+  version: 1;
+  key_id: string;
+  revision: number;
   iv: string;
   ciphertext: string;
 }

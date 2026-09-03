@@ -14,6 +14,7 @@ import {
   getBalances,
 } from '../store/localStore';
 import type { BalanceOut, StoredSyncAction, SyncStatus } from './types';
+import { activateTestOwner } from '../setupTests';
 
 async function resetDb(): Promise<void> {
   await closeDb();
@@ -42,6 +43,7 @@ function drawAction(
     payload: { entitlement_id: entitlementId, amount },
     status,
     attempt_count: 0,
+    storage_revision: 1,
   };
 }
 
@@ -139,20 +141,21 @@ describe('Entitlement_Calculator — balance refresh (Property 12)', () => {
     await fc.assert(
       fc.asyncProperty(balanceArb, balanceArb, async (first, second) => {
         await resetDb();
+        const owner = await activateTestOwner();
         const playerId = 'player-1';
 
-        await refreshCachedBalances(playerId, [first]);
-        const afterFirst = await getBalances(playerId);
+        await refreshCachedBalances(playerId, [first], owner);
+        const afterFirst = await getBalances(playerId, owner);
         expect(afterFirst!.balances[0].remaining_units).toBe(first.remaining_units);
 
         // A fresh GET result replaces the cached value entirely.
-        await refreshCachedBalances(playerId, [second]);
-        const afterSecond = await getBalances(playerId);
+        await refreshCachedBalances(playerId, [second], owner);
+        const afterSecond = await getBalances(playerId, owner);
         expect(afterSecond!.balances).toHaveLength(1);
         expect(afterSecond!.balances[0].remaining_units).toBe(second.remaining_units);
 
         // Subsequent optimistic computation uses the new value (no pending draws → equals it).
-        const opt = await getOptimisticRemaining(playerId, ENT);
+        const opt = await getOptimisticRemaining(playerId, ENT, owner);
         if (second.remaining_units === null) {
           expect(opt).toBe('unlimited');
         } else {

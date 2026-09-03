@@ -19,7 +19,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Session } from '../domain/types';
+import type { LocalDataOwner, Session } from '../domain/types';
 import {
   AuthManager,
   SESSION_ACTIVE_STORAGE_KEY,
@@ -38,6 +38,9 @@ export interface AuthContextValue {
   isAuthenticated: boolean;
   /** The current session, or `null`. */
   session: Session | null;
+  /** Active immutable owner-data capability, published before descendants mount. */
+  localDataOwner: LocalDataOwner | null;
+  isLocalDataOwnerCurrent: (owner: LocalDataOwner | null | undefined) => owner is LocalDataOwner;
   /** The current role for nav gating, or `null` (Req 2). */
   role: Role | null;
   /** True while a login request is in flight. */
@@ -280,6 +283,8 @@ export function AuthProvider({
     return {
       isAuthenticated,
       session,
+      localDataOwner: isAuthenticated ? authManager.getLocalDataOwner() : null,
+      isLocalDataOwnerCurrent: (owner) => authManager.isLocalDataOwnerCurrent(owner),
       role: isAuthenticated ? (session?.role ?? null) : null,
       submitting,
       login,
