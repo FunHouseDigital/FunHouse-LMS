@@ -54,7 +54,8 @@ touch a component skip its job green:
   no-forbidden assertions.
 - **`python-tests`** — pytest against a PostgreSQL service (DB-backed property
   tests execute here).
-- **`web-tests`** — `npm test` plus build.
+- **`web-tests`** — `npm test`, a production build, and the credential-free
+  hermetic five-session offline browser gate.
 
 Each job self-skips (green) when its component isn't present on the branch, and
 all three enforce on `main`. **No AWS credentials are used in CI.**
@@ -75,8 +76,15 @@ DB-backed tests need a reachable PostgreSQL via the `DB_*` env vars /
 **Web**
 
 ```bash
-cd web && npm ci && npm run test && npm run build
+cd web && npm ci
+npx playwright install chromium
+npm run test
+npm run test:field-acceptance-hermetic
 ```
+
+The hermetic browser command performs the production build, serves it locally,
+and uses only synthetic API fixtures. It requires no live credential or network
+service.
 
 **Infra** (offline, no AWS)
 

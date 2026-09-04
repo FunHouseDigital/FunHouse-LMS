@@ -64,6 +64,7 @@ Complete this block for the release under test:
 Test date (Africa/Johannesburg):
 Production main SHA (full 40 characters):
 Visible app release (first 7 SHA characters):
+Main CI run link or ID (includes hermetic five-session browser gate):
 PWA production deployment link or ID:
 API production deployment link or ID:
 Verify Live API Role Access run link or ID:
@@ -93,6 +94,9 @@ number, telephone number, email address, or screenshot containing roster data.
 Kiro or the release operator completes these before the physical rehearsal.
 
 - [ ] The recorded SHA is the current `main` SHA.
+- [ ] Main CI passed for that SHA, including the credential-free hermetic
+      five-session offline browser gate. This automated result does not replace
+      the physical-device checks below.
 - [ ] Both Vercel Production deployments attached to that SHA completed
       successfully; neither build was skipped.
 - [ ] The app visibly shows **Release `<short-sha>`**, and those seven characters
@@ -180,6 +184,11 @@ devices before replacing the app:
 **Install, upgrade and role-transition result: PASS / FAIL**
 
 ## 3. Five-session offline durability rehearsal
+
+Main CI has already exercised these five synthetic cards in real Chromium using
+a local API fixture and a persistent browser profile. Repeat every step here on
+the installed lounge device: the automated gate cannot prove device radios,
+operating-system process termination, installed-icon launch or operator pace.
 
 Use only `API Verification Canary v1`. Keep all cash amounts at **R0** so this
 rehearsal does not create reportable revenue. Do not choose **Entitlement draw**

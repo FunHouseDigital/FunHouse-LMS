@@ -17,7 +17,8 @@ under POPIA, on a lean footprint targeting **under US$80/month**.
 > candidate release must still complete the ordered gate: successful API and PWA
 > Production deployments for the exact `main` SHA, **Verify Live API Role
 > Access**, two same-SHA protected browser runs (including stable-identity
-> replay), and the synthetic-only
+> replay), a green credential-free five-session offline Chromium gate in main
+> CI, and the synthetic-only
 > [Phase 1 field-acceptance rehearsal](docs/field-acceptance-checklist.md) on the
 > actual lounge device. Complete the full sequence before using real learner
 > data or beginning Phase 2. The AWS App Runner/RDS/S3/CloudFront infrastructure

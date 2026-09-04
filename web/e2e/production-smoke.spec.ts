@@ -323,6 +323,7 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
     typeof canaryHref === 'string' && /^\/players\/[^/]+$/.test(canaryHref),
     'Synthetic canary did not resolve to one server-backed player',
   );
+  const canaryPlayerId = decodeURIComponent(canaryHref!.slice('/players/'.length));
 
   // Hydrate and select the canary while online, then perform capture offline.
   await page.getByRole('link', { name: 'Log Session' }).click();
@@ -391,28 +392,47 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
         getOne('payments', ids[1]),
         getOne('meta', 'session'),
       ]);
+      const isSealedEnvelope = (value: unknown): boolean => {
+        const envelope = (value as { envelope?: Record<string, unknown> } | undefined)?.envelope;
+        return Boolean(
+          envelope &&
+          envelope.version === 1 &&
+          typeof envelope.key_id === 'string' &&
+          typeof envelope.iv === 'string' &&
+          typeof envelope.ciphertext === 'string',
+        );
+      };
       const queue = queueValues as Array<Record<string, unknown>>;
-      const expectedQueue = queue.filter((row) => ids.includes(String(row.client_id)));
-      const entities = expectedQueue.map((row) => String(row.entity)).sort();
+      const expectedQueue = queue.filter((row) =>
+        ids.some((id) => id === String(row.client_id)),
+      );
       const queueValid =
         expectedQueue.length === 2 &&
         expectedQueue.every(
           (row) =>
-            row.status === 'unsynced' && row.attempt_count === 0 && row.created_at === smokeTime,
-        ) &&
-        entities.join(',') === 'payment,session';
+            row.status === 'unsynced' &&
+            row.attempt_count === 0 &&
+            row.created_at === smokeTime &&
+            typeof row.owner_scope === 'string' &&
+            isSealedEnvelope(row) &&
+            !('entity' in row) &&
+            !('payload' in row) &&
+            !('player_id' in row),
+        );
 
       const session = sessionRow as Record<string, unknown> | undefined;
       const payment = paymentRow as Record<string, unknown> | undefined;
-      const recordsValid =
+      const recordsSealed =
         session?.client_id === ids[0] &&
-        session?.session_type === 'lounge' &&
-        session?.console === 'PS5' &&
-        session?.duration_minutes === 20 &&
-        session?.started_at === smokeTime &&
+        typeof session.sync_scope === 'string' &&
+        isSealedEnvelope(session) &&
+        !('player_id' in session) &&
+        !('duration_minutes' in session) &&
         payment?.client_id === ids[1] &&
-        payment?.method === 'cash' &&
-        payment?.amount_cents === 0;
+        typeof payment.sync_scope === 'string' &&
+        isSealedEnvelope(payment) &&
+        !('player_id' in payment) &&
+        !('amount_cents' in payment);
 
       const meta = sessionMeta as
         | { value?: { iv?: unknown; ciphertext?: unknown } }
@@ -428,15 +448,20 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
       const serialised = JSON.stringify(allValues);
       const noPassword = !serialised.includes(suppliedPassword);
       const noJwt = !/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(serialised);
-      return { queueValid, recordsValid, encryptedSession, noPassword, noJwt };
+      const noClearBusinessData =
+        !serialised.includes(canaryPlayerId) &&
+        !serialised.includes('PS5') &&
+        !serialised.includes('cash');
+      return { queueValid, recordsSealed, encryptedSession, noPassword, noJwt, noClearBusinessData };
     },
-    { ids: CLIENT_IDS, suppliedPassword: password!, smokeTime: SMOKE_TIME },
+    { ids: CLIENT_IDS, suppliedPassword: password!, smokeTime: SMOKE_TIME, canaryPlayerId },
   );
-  requireCondition(localState.queueValid, 'Offline queue did not contain two safe unsynced actions');
-  requireCondition(localState.recordsValid, 'Offline local session/payment records were incomplete');
+  requireCondition(localState.queueValid, 'Offline queue did not contain two sealed unsynced actions');
+  requireCondition(localState.recordsSealed, 'Offline local session/payment records were not sealed');
   requireCondition(localState.encryptedSession, 'The persisted login session was not encrypted');
   requireCondition(localState.noPassword, 'A plaintext password was found in IndexedDB');
   requireCondition(localState.noJwt, 'A plaintext JWT was found in IndexedDB');
+  requireCondition(localState.noClearBusinessData, 'Personal or capture data was found outside ciphertext');
 
   // Step 4: reconnect and flush. Automatic online sync gets a bounded chance;
   // otherwise use the visible manual retry control.

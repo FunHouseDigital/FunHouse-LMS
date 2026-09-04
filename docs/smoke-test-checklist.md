@@ -30,6 +30,30 @@ For the current Vercel + Supabase rollout:
 The same checks also apply to a future CloudFront/App Runner deployment by
 substituting its PWA and API origins.
 
+## Credential-free hermetic browser gate
+
+Every pull request runs `npm run test:field-acceptance-hermetic` in the normal
+`web-tests` CI job. It builds the production PWA, serves it only on loopback,
+and uses a synthetic in-process API fixture—no live password, remote service or
+real learner data is available to the test.
+
+Real Chromium performs the five Section 3 field cards and proves the exact
+`2, 4, 6, 8, 10` waiting counts. The test then closes the complete browser
+context, relaunches the same persistent profile while offline, and verifies the
+service-worker shell, encrypted session, non-extractable owner key, roster cache,
+ten queue actions and five session/payment record pairs survive. After
+reconnection it verifies one four-field API batch, five server sessions, five
+Cash R0 payments, zero waiting work and no retransmission after a second browser
+restart. Raw IndexedDB assertions check only encrypted envelopes and operational
+mirrors; capture meaning is checked at the decrypted wire and rendered-history
+boundaries.
+
+This is a mandatory regression gate, not field acceptance. It cannot prove the
+operating system's install prompt, an actual device process kill, radio controls,
+production deployment/CORS, real API persistence, operator pace or account
+transition usability. The protected live automation and Sections 1–6 below
+remain required for GO.
+
 ## Protected browser automation
 
 The manually dispatched **Verify Live PWA Browser** workflow runs the automated
