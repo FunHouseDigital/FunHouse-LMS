@@ -661,3 +661,37 @@ Then confirm nothing lingers:
   `/sw.js` (Step 6).
 - **State conflict:** S3-native lockfile prevents concurrent applies; resume a
   partial apply by re-running `apply` (idempotent).
+
+
+## Exact-SHA Phase 1 evidence gate
+
+After the reviewed commit reaches `main`, dispatch [Validate Phase 1 Release Evidence](https://github.com/FunHouseDigital/FunHouse-LMS/actions/workflows/validate-phase1-release-evidence.yml) from the `main` ref. The workflow always validates its dispatched lowercase full SHA; it rejects any non-main ref and rechecks `main` after the final evidence request. The job uses an ephemeral GitHub Actions token with only `actions: read`, `contents: read`, `deployments: read` and `statuses: read`. It collects a schema-v1 snapshot, validates it offline, appends the Markdown report to the job summary and uploads the three secret-free files for 30 days.
+
+The automated order is fixed:
+
+1. the candidate is still the exact current `main` SHA;
+2. the exact-SHA `push` CI run and hermetic five-session browser step succeeded;
+3. the newest matching API and PWA Vercel commit statuses and Vercel-bot Production deployments succeeded;
+4. API-role verification started after the API deployment succeeded;
+5. the `applied-or-skipped` browser run started after both deployments and API-role completion;
+6. the `skipped` replay started after the first browser run completed; and
+7. the same-SHA runtime database preflight succeeded and is no older than seven days at snapshot collection.
+
+Any new commit on `main` invalidates the candidate and requires evidence for the new exact SHA. A newer failed or pending matching status, deployment or workflow run supersedes an older success. The optional AWS `Deploy` workflow is not Vercel/Supabase production evidence and is never counted.
+
+For reproducible local inspection, use the network-free half only:
+
+```bash
+python -m funhouse_pipeline.release_evidence validate \
+  --snapshot release-evidence/snapshot.json \
+  --report-json release-evidence/report.json \
+  --report-markdown release-evidence/report.md
+```
+
+Do not treat automated `PASS` as release authorisation. Record a fresh Security Advisor result, confirm no out-of-band database/security change, confirm founder and operator credential availability through the password manager, complete the physical lounge checks, and obtain founder/operator GO.
+
+
+The local `validate` command is reproducible but not authoritative: local snapshots and reports are marked `LOCAL_DIAGNOSTIC_ONLY`. A matching snapshot deliberately reports `EXTERNAL_WORKFLOW_RUN_REQUIRED` rather than self-attesting its origin. Acceptance may use only the three files downloaded directly from the matching successful main-branch workflow run. Confirm the recorded run ID, attempt, workflow ref and validator SHA match that run. Do not detach local files and pair them with an unrelated run link.
+
+
+The snapshot is explicitly point-in-time. `as_of` is captured before evidence requests begin and is the latest timestamp any selected evidence may have; `collected_at` is captured after Production stability confirmation and the final `main` recheck. Database-preflight freshness is measured at `collected_at`, so collection time cannot hide a seven-day expiry. Any deployment or status change after `as_of` falls outside that snapshot and requires a newly dispatched validator run before final GO.

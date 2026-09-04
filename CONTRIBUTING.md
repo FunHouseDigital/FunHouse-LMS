@@ -127,3 +127,13 @@ AWS full-stack path and needs live AWS credentials. **Phase 2 (Lesson Engine,
 Bedrock) remains gated behind a recorded Phase 1 field-acceptance GO** — do not
 begin Phase 2 work until the candidate release passes the same-SHA API and
 browser gates and the accepted device completes the real-lounge rehearsal.
+
+
+## Release-evidence contracts
+
+Release-sensitive changes must preserve the exact names consumed by `funhouse_pipeline.release_evidence`: the four workflow names and paths, CI job `web-tests (npm test + build)`, CI step `Production build + hermetic five-session offline gate`, and browser run title `Verify Live PWA Browser · <expected_sync_result> · <full-sha>`. Treat these strings as release APIs and update validator fixtures deliberately if a reviewed contract changes.
+
+Use `python -m funhouse_pipeline.release_evidence validate` for fully offline review of a saved snapshot. The command returns `0` only when all automated evidence passes, `1` when evidence is missing, failed, stale, out of order or for the wrong SHA, and `2` for malformed input or collection/API errors. Do not add secrets, raw GitHub responses, database values or learner data to snapshots, reports, fixtures, workflow summaries or pull requests. Automated PASS never replaces the manual acceptance record or founder/operator GO.
+
+
+Locally collected or edited snapshots are reproducibility aids only and must report `LOCAL_DIAGNOSTIC_ONLY`; they are not acceptance evidence. Even a matching snapshot reports `EXTERNAL_WORKFLOW_RUN_REQUIRED`: authoritative provenance comes only from downloading it directly from a successful main-branch **Validate Phase 1 Release Evidence** run and matching its run ID/attempt, workflow ref and validator SHA.

@@ -37,7 +37,7 @@ jobs:
     name: infra-gates (terraform fmt/validate + assertion scripts)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Guard — detect infra/ component
         id: guard
@@ -54,7 +54,7 @@ jobs:
         if: steps.guard.outputs.present == 'true'
         run: sudo apt-get update && sudo apt-get install -y shellcheck jq
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         if: steps.guard.outputs.present == 'true'
         with:
           terraform_version: "1.10.5"
@@ -142,7 +142,7 @@ jobs:
       PGOPTIONS: "-c funhouse.enable_runtime_role=on"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Guard — detect Python component
         id: guard
@@ -155,7 +155,7 @@ jobs:
             echo "pyproject.toml and/or tests/ not found on this branch — skipping python-tests (runs on main)."
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         if: steps.guard.outputs.present == 'true'
         with:
           python-version: "3.11"
@@ -180,7 +180,7 @@ jobs:
     name: web-tests (npm test + build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Guard — detect web/ component
         id: guard
@@ -193,7 +193,7 @@ jobs:
             echo "web/package.json not found on this branch — skipping web-tests (runs on main / the PWA branch)."
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.guard.outputs.present == 'true'
         with:
           node-version: "22"

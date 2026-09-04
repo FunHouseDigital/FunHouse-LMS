@@ -44,6 +44,7 @@ dev = [
 
 [project.scripts]
 funhouse-pipeline = "funhouse_pipeline.orchestrator.cli:main"
+funhouse-release-evidence = "funhouse_pipeline.release_evidence.cli:main"
 
 [build-system]
 requires = ["hatchling"]

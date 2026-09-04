@@ -216,3 +216,21 @@ migrating to another host or region is an env change plus a re-run of
 `run_migrations` — documented in `infra/README.md`'s migration-equivalence
 table. Any future cross-region model inference would have to be a named,
 POPIA-justified, documented decision.
+
+
+## Phase 1 release evidence
+
+The read-only release-evidence validator binds automated Phase 1 evidence to one lowercase full commit SHA that must still be the current `main`. It verifies the reviewed push CI gate, both newest Vercel commit statuses and Production deployments, ordered API-role and protected-browser runs, and a successful same-SHA database preflight no older than seven days.
+
+For local diagnostics, run the collector and validator with:
+
+```bash
+python -m funhouse_pipeline.release_evidence check \
+  --repository FunHouseDigital/FunHouse-LMS \
+  --candidate-sha <lowercase-full-main-sha> \
+  --snapshot release-evidence/snapshot.json \
+  --report-json release-evidence/report.json \
+  --report-markdown release-evidence/report.md
+```
+
+Collection uses GitHub REST `GET` requests only. The snapshot contains normalised IDs, conclusions, timestamps and sanitised URLs; it never serialises the ephemeral `GITHUB_TOKEN`, credentials, raw API payloads, database rows or learner data. A local report is marked `LOCAL_DIAGNOSTIC_ONLY` and cannot authorise acceptance. A matching report deliberately says `EXTERNAL_WORKFLOW_RUN_REQUIRED`: only artefacts downloaded directly from the matching successful **Validate Phase 1 Release Evidence** run dispatched from `main` count as automated release evidence. A `PASS` is still automated evidence only. Security Advisor review, confirmation of no out-of-band database/security changes, credential availability, the physical lounge rehearsal and founder/operator GO remain manual requirements.
