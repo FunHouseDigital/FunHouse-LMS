@@ -1,4 +1,5 @@
 name: Verify Live PWA Browser
+run-name: Verify Live PWA Browser · ${{ inputs.expected_sync_result }} · ${{ github.sha }}
 
 # Manual production browser probe for the approved PWA/API origins. It uses only
 # the retained synthetic player and stable action identities, so reruns reuse

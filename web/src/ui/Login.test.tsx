@@ -195,6 +195,7 @@ describe('Login screen (Req 1.1, 1.3, 1.4)', () => {
     });
     expect(screen.getByRole('navigation', { name: /primary/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sell' })).toBeInTheDocument();
+    expect(await screen.findByText('Up to date — no items waiting to sync.')).toBeInTheDocument();
   });
 });
 

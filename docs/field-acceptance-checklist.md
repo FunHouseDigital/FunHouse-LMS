@@ -387,3 +387,18 @@ begin.
 A **NO-GO** keeps real learner use and Phase 2 blocked. Follow the stop,
 rollback, and retest procedure; do not weaken an acceptance criterion to close
 the gate.
+
+
+## Generated exact-SHA evidence record
+
+Download the `snapshot.json`, `report.json` and `report.md` artefacts directly from the matching successful main-branch **Validate Phase 1 Release Evidence** run and attach them to the Phase 1 acceptance record. Record that workflow run link, ID and attempt; confirm the report says automated `PASS`, authority `EXTERNAL_WORKFLOW_RUN_REQUIRED`, and the same candidate/validator SHA and workflow ref. That authority label is intentionally not a self-attestation: provenance comes from the matching successful GitHub run and its attached artefact. Locally produced or edited files marked `LOCAL_DIAGNOSTIC_ONLY` are reproducibility aids and must never be accepted or paired with another run link. The report selects the exact CI, API/PWA deployment, API-role, first browser, replay and database-preflight evidence by safe run/deployment ID and timestamp.
+
+Automated `PASS` does **not** complete this checklist. The acceptance owner must still record:
+
+- Security Advisor freshness with zero errors and zero warnings;
+- confirmation that no database or security change occurred outside the reviewed SHA/workflows;
+- founder and Loyiso password-manager availability without copying password values;
+- the physical lounge install/upgrade, account, offline, relaunch, five-card and operator usability results; and
+- the final founder/operator GO decision.
+
+If `main` advances, any selected evidence is stale, or a newer matching run/deployment fails, mark the record blocked and restart evidence collection for the new exact SHA. Never paste passwords, JWTs, database rows, real learner data or production secrets into the record.
