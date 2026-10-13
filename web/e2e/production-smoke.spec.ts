@@ -367,7 +367,7 @@ test('production PWA: offline synthetic capture, sync and read-back', async ({
   expect(syncRequestCount, 'Offline capture attempted a sync request').toBe(syncRequestsBeforeCapture);
 
   const localState = await page.evaluate(
-    async ({ ids, suppliedPassword, smokeTime }) => {
+    async ({ ids, suppliedPassword, smokeTime, canaryPlayerId }) => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const open = indexedDB.open('funhouse-revenue');
         open.onsuccess = () => resolve(open.result);
