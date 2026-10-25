@@ -45,6 +45,26 @@ crosses that boundary. Rerun the applicable live verification workflow from
 Production deployment SHA before manual smoke checks. A green CI run or
 `/health` response alone is not production acceptance.
 
+### Field-acceptance records must not be merged before GO
+
+Both Vercel projects deploy on **every** push to `main` (`ignoreCommand:
+"exit 1"` in each `vercel.json` — the deliberate PR #34 behaviour that keeps the
+API and PWA at the same SHA and prevents a project from silently skipping a
+build). The PWA bakes `VERCEL_GIT_COMMIT_SHA` into its visible **Release** label
+at build time. A consequence: **any** merge to `main`, including a docs-only
+change, advances `main`, rebuilds the PWA, and moves the visible Release SHA.
+
+Therefore a **Phase 1 field-acceptance record
+(`docs/field-acceptance-record-<sha>.md`) must stay on its branch and must not be
+merged to `main` until after the physical gate passes and the founder records
+GO.** Merging it pre-GO advances `main`, redeploys the PWA to a new SHA, and
+makes the on-device Release no longer match the SHA the record and its evidence
+were pinned to — an automatic "stale Release" FAIL. This exact loop invalidated
+the `59fc311` → `30a0803` → `0b6df3d` candidates. Keep the record (and any other
+docs-only change made during an open gate) unmerged while a candidate is under
+test; merge the record as the **final** post-GO step, accepting that the merge
+itself will produce a new build.
+
 ## How CI works (`.github/workflows/ci.yml`)
 
 CI has three jobs, each **guarded on component presence** so branches that don't
