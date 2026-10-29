@@ -19,6 +19,7 @@ Meetings recorded so far:
 | --- | --- | --- |
 | Meeting A | A Thursday, 21:00 SAST (date not in transcript) | Proposed AWS architecture, offline timer and alerts, Cognito, education direction |
 | Meeting B | The Thursday after a missed week, 21:00 SAST (date not in transcript) | Offline vs online split, AWS prototype demo, lesson creation flow, PS5 idea, Kiro features, partners, region |
+| Meeting C | Friday, most likely 23 October 2026 (the following Friday was "the 30th"), evening SAST | Games specialist advice, partner candidate and its LMS demo, lounge equipment, age-appropriate games |
 
 The transcript of the first introductory meeting (before Meeting A) is not
 recorded here.
@@ -146,6 +147,36 @@ Founder:
 
 ---
 
+## Meeting C
+
+### C1. Agreed or stated
+
+| Topic | What was said | Compared with the repo |
+| --- | --- | --- |
+| Games specialist advice | Games that use AWS mostly use it for data pipelines, leaderboards and stats, not to run the game. Amazon GameLift Streams (streaming games to players) does not fit FunHouse. The Godot game engine ([godotengine.org](https://godotengine.org)) was mentioned as an option. | No code impact. |
+| How to build learning games | AWS recommends building the typing and coding games inside the LMS with Kiro and Amazon Bedrock, so the work uses credits instead of cash. | Our reading: Kiro writes the game code; Bedrock could generate content such as typing sentences on the lesson theme. To confirm. Bedrock is Phase 2 and gated. |
+| PS5 app | No update on Mamadu's PS5 test. The games advice points away from a PlayStation app for now. | Stays research only. |
+| Founder's Kiro steering and hooks | Not tried yet. Aya builds on weekends and has been updating the PRD with ideas from these meetings. | The PRD has changed since the specs were written. The latest version is needed. |
+| Partner candidate | AWS contacted "HaviLabs" (spelling unconfirmed; an AWS social impact programme partner) and is waiting for a reply. The only open question is whether they can work on a South African project. AWS checked them for: AI Services and Small Business competencies; validations for CloudFront, Lambda, CloudFormation, RDS and EC2; several professional AWS certifications. | If a partner builds the LMS and lounge, who builds what has to be decided (D9). |
+| Partner process | 1. Partner replies. 2. AWS discovery call with the partner. 3. Partner sends an overview. 4. Joint call with Aya: demo, scope, cost, and what happens when the work moves to other AWS accounts after the credits. | Waiting on the partner. |
+| Partner's LMS demo ("Learnify") | Upload a document and AI drafts the modules and a quiz checked against it; a person approves. Enrol by role with deadlines. 17 languages; web, iOS and Android apps. Certificates with a validity date and verification link. Agents remind before expiry, escalate to a manager and draft actions for approval but never grant anything. A tutor answers only from the course. Exportable audit trail. Append-only consent ledger, data rights requests, retention and breach workflows (built for India's privacy law, data kept in Mumbai). Own branding. | Aya will borrow ideas for an African context, not copy it. The repo already has an append-only consent table (`funhouse_pipeline/sql/002_consents_append_only.sql`). |
+| Why the LMS matters | Schools cannot pay, so Aya needs funders to subsidise the product, and funders need to see it working. The LMS is also a showcase for funding. AI should cut lesson creation (4 to 5 hours) and grading (4 to 5 hours). Aya is also seeking a partner to teach AI to teachers and children. | Raises the priority of a demonstrable LMS and impact dashboard. |
+| Lounge equipment | 1 PS4, 2 PS5s and 3 PCs. A 4th PC (Aya's own) is used only when it is very busy. PCs have Steam, but there is little demand for PC games. | The app offers only `PS5` or `PS4` (`web/src/domain/captures/session.ts` line 16). It has no PC option and cannot tell the two PS5s apart. The station board needs named stations. |
+| Age-appropriate games | No violent games such as Call of Duty, because most players are under 18 and parents object. Games are added based on demand. | Not recorded anywhere. A game catalogue should hold each game's age rating. |
+| First hire | A part-time funding intern, 7 hours a month. | Unknown whether they need app access. |
+| Funding tools | Chichi shared an AI tool for finding funders. Aya already uses Kindora with Claude. | No code impact. |
+| Next meeting | Not fixed. Mamadu will contact Aya when the partner replies. Friday 30 October was suggested. Chichi is away at AfroTech the week after. | |
+
+### C2. Actions
+
+AWS team: wait for the partner, or try another partner for a faster reply; hold a
+discovery call; set up the joint call; send a follow-up email.
+
+Founder: try a new Kindora search for funding; continue building on weekends;
+(still open from Meeting B) try a steering file and a hook.
+
+---
+
 ## Open decisions (all meetings)
 
 | # | Decision | Current rule in the repo | Options |
@@ -158,16 +189,18 @@ Founder:
 | D6 | Learner and parent logins | Only staff log in. | Needs a design. Under-18s need parent consent under POPIA. The prototype's parent login may be the place to give consent. |
 | D7 | AWS prototype vs this repo | This repo is the live product. | A: keep building this repo and use the prototype as a design reference. B: adopt the prototype's code. Needs a look at the prototype code first. |
 | D8 | AWS region | Deploy targets `af-south-1`. | Confirm `af-south-1` for all personal data, and decide what (if anything) may run in `us-east-1`. |
+| D9 | Who builds what, if a partner is hired | Everything is built in this repo with Kiro. | A: Kiro keeps building the lounge (income now); the partner builds the LMS, using this repo and the PRD as the brief. B: the partner builds both, and this repo becomes the reference. C: no partner; Kiro builds both. Depends on the partner's reply and cost. |
+| D10 | Lounge stations | Choices are `PS5` or `PS4` only. | List the real stations by name (for example PS5-1, PS5-2, PS4, PC-1 to PC-3, plus Aya's PC as overflow) and whether PC sessions use the same prices. |
 
 ## New work (all meetings, not yet specced)
 
 Lounge (income):
 
-1. Station board with a live timer per station that survives closing, locking and going offline.
+1. Station board with a live timer per named station (2 PS5s, 1 PS4, 3 PCs, plus an overflow PC) that survives closing, locking and going offline.
 2. Session-end and discrepancy alerts to the founder and the lounge manager.
 3. Limit of 4 active subscriptions.
 4. Daily cash target on the lounge dashboard.
-5. Game catalogue with pictures in session logging.
+5. Game catalogue with pictures and age ratings in session logging, per platform (PlayStation or PC/Steam).
 6. Player accounts with a digital loyalty card (10th visit: one hour free).
 7. Player app: pre-booking, online payment (needs a South African payment provider) and QR check-in.
 
@@ -176,7 +209,8 @@ Learning:
 8. Student login: logging in records attendance and opens the lesson of the day.
 9. Parent login (consent and progress).
 10. Lessons: create, assign to a learner or cohort with a due date, track results.
-11. Lesson creation flow with sections (content, game, themed typing exercise) and an attendance register.
+11. Lesson creation flow with sections (content, game, themed typing exercise) and an attendance register. Ideas from the partner demo: upload source material, AI drafts the lesson and quiz checked against it, founder approves.
+11a. AI-assisted grading, with the founder approving results.
 12. Lesson analytics and attendance history.
 13. In-platform typing game and learning games.
 14. Certificate-readiness curriculum for ages 15 to 17 (content work).
@@ -185,7 +219,8 @@ Founder and platform:
 
 15. Impact dashboard (cash, sessions, skills learned).
 16. Move to AWS `af-south-1` on the chosen container platform.
-17. 2027: Bedrock AI tutor, AI lesson drafting and AI game creation with Knowledge Bases, founder review before publishing.
+17. 2027: Bedrock AI tutor (answers only from FunHouse course material), AI lesson drafting and AI game content with Knowledge Bases, founder review before publishing. Agents may remind and draft, never act without approval.
+17a. Impact dashboard good enough to show funders.
 18. Research: FunHouse app on PS5 and official PlayStation integration.
 
 Kiro setup:
@@ -198,3 +233,5 @@ Kiro setup:
 - The PRD and user journey are not in the repo. Specs cite "PRD §3.1" only.
 - Transcript of the first introductory meeting.
 - The AWS prototype code or screenshots.
+- The latest PRD. Aya has updated it with ideas from these meetings.
+- Transcript of the final meeting.
