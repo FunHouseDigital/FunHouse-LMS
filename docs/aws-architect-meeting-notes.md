@@ -20,6 +20,7 @@ Meetings recorded so far:
 | Meeting A | A Thursday, 21:00 SAST (date not in transcript) | Proposed AWS architecture, offline timer and alerts, Cognito, education direction |
 | Meeting B | The Thursday after a missed week, 21:00 SAST (date not in transcript) | Offline vs online split, AWS prototype demo, lesson creation flow, PS5 idea, Kiro features, partners, region |
 | Meeting C | Friday, most likely 23 October 2026 (the following Friday was "the 30th"), evening SAST | Games specialist advice, partner candidate and its LMS demo, lounge equipment, age-appropriate games |
+| Meeting D | Late October 2026 (date not in transcript). Peer founder catch-up, not AWS staff | Partner funding reality, credits, Amazon Quick, AI teaching approach, shared devices, on-device AI, learner age range |
 
 The transcript of the first introductory meeting (before Meeting A) is not
 recorded here.
@@ -177,6 +178,42 @@ Founder: try a new Kindora search for funding; continue building on weekends;
 
 ---
 
+## Meeting D
+
+Catch-up with Pera Barrett, a fellow founder from the AWS social impact
+accelerator (New Zealand; runs Shoebox Christmas and Kaha Create). Personal and
+political conversation is left out.
+
+### D-1. Stated
+
+| Topic | What was said | Effect on the build |
+| --- | --- | --- |
+| Infrastructure at home | No tap water on the day of the meeting; electricity cuts; the government blocked cheaper rural Starlink internet. Aya: an installed app must work "100% offline and 150% online". | Reconfirms offline-first as the top rule. |
+| Who plays at the lounge | Open only outside school hours. All customers are school children; adults are not allowed, by choice. The lounge players are meant to be the same children Aya later teaches at school. | Every player is a minor. Player accounts, loyalty cards and any player app need parent consent under POPIA. |
+| One ecosystem | The Village Capital EdTech mentor (Nigeria) also advised separating gaming and education. Aya still prefers one ecosystem. | No change. Stays one system. |
+| First hire | Starts next month: 7 hours a month (6 work + 1 meeting), six-month contract, funding applications. She runs her own EdTech company in another province. Must tell Aya before applying for anything. | No app access assumed. |
+| How partners are paid | Partners are paid from AWS funding buckets and receive a share of the customer's AWS spend for a period. A partner once pushed Pera to swap a working database for an AWS one with no problem to solve. Pera's partner (RevStar) scoped about US$30,000 of work, took a long time, then said AWS funding rules had changed and it might not deliver. Meetings across time zones and giving admin access add overhead. Funding comes at levels: proof of concept, MVP, or production. | A partner build is uncertain and slow. Keep the lounge build moving with Kiro. If a partner is used, agree the level (MVP or production) in writing, give least-privilege access, and reject changes that solve no real problem. |
+| Credits | The AWS architects told Aya to aim to use all US$10,000 of credits, because that usually leads to more. Aya now calls building on Vercel and Supabase "a mistake". | Supports moving to AWS. |
+| Amazon Quick | Pera recommends Amazon Quick: an AI assistant over your own data that answers questions and builds dashboards. He quoted about US$250 a month. | Checked ([Quick pricing](https://aws.amazon.com/quick/pricing/)): dashboards over your own AWS data are in the Professional (US$20 per user per month) and Enterprise (US$40) plans, each plus a US$250 per account monthly fee. One Professional user is about US$3,240 a year, roughly a third of the credits. A 30-day free Enterprise trial exists. Free and Plus plans are for individual AI assistant use. Region availability for South African personal data is not checked. |
+| AWS funding buckets | AWS has themed funding (for example promoting a new region, education, rural connectivity). | Worth asking Mamadu whether an `af-south-1` or education bucket could fund a partner. |
+| Education pathway | Now starts at age 11 or 12 (Meeting A said 15 to 17), aiming at AWS certificates and job readiness by 18. A 4 to 8 year programme. Target: 1,000 learners if funded. AWS staff in Cape Town offered free 3-hour lessons; Aya will cut them into 45-minute chunks with gaming. | Lessons should be about 45 minutes. Plan for about 1,000 learners. |
+| Community champions (idea) | Train a few adults close to the children (for example 5 adults for 200 children each) through free AWS Skill Builder pathways, then have them run the programme. Many teachers are overwhelmed or uninterested in tech. | Fits the existing facilitator role. |
+| How AI should teach | Pera's school talks: when learners let AI answer for them, they stop learning. Teach learners to make AI ask them questions instead. Aya agreed fully. | The future AI tutor should ask learners questions and never hand over answers or do their work. |
+| Devices | Only 6 devices; learners work 2 or 3 to a device. With 20 devices Aya could run the AWS classes. AWS (and other companies) donate refurbished devices; Pera got 12 laptops about 4 to 5 months after asking. | One device is shared by several learners. Attendance cannot come from logins alone. |
+| On-device AI | Small open-source models (Pera uses Gemma) run on a laptop with no internet. Laptops that run large models are expensive now but will get cheaper. Aya wants an AI tutor that works offline. | Future option: offline AI on the device. Bedrock needs the internet. |
+| Sustainability | Pera's advice: build things that keep running if the founder is away or ill. | The lounge app should let Loyiso run a full day without Aya. |
+| Next accelerator cohort | Possibly in Cape Town. Aya may offer to speak as an alumna. | No code impact. |
+| Google for Startups South Africa | Aya and a co-founder are in the accelerator for a nursing venture (it appears separate from FunHouse). Pitch in Cape Town, 29 November to 5 December 2026, possibly about US$30,000. | Aya is away 29 November to 5 December. |
+
+### D-2. Actions (founder)
+
+1. Look at Mozilla Foundation and AWS Imagine Grant funding.
+2. Look into Amazon Quick.
+3. Ask AWS who handles refurbished device donations in South Africa.
+4. Ask the AWS social impact team about attending the next cohort as an alumna.
+
+---
+
 ## Open decisions (all meetings)
 
 | # | Decision | Current rule in the repo | Options |
@@ -191,6 +228,11 @@ Founder: try a new Kindora search for funding; continue building on weekends;
 | D8 | AWS region | Deploy targets `af-south-1`. | Confirm `af-south-1` for all personal data, and decide what (if anything) may run in `us-east-1`. |
 | D9 | Who builds what, if a partner is hired | Everything is built in this repo with Kiro. | A: Kiro keeps building the lounge (income now); the partner builds the LMS, using this repo and the PRD as the brief. B: the partner builds both, and this repo becomes the reference. C: no partner; Kiro builds both. Depends on the partner's reply and cost. |
 | D10 | Lounge stations | Choices are `PS5` or `PS4` only. | List the real stations by name (for example PS5-1, PS5-2, PS4, PC-1 to PC-3, plus Aya's PC as overflow) and whether PC sessions use the same prices. |
+| D11 | How the AI tutor teaches | No AI tutor yet. | A: the tutor asks learners questions and never hands over answers or does their work (Meeting D). B: a normal question-and-answer tutor. |
+| D12 | Amazon Quick | Not used. | A: not now; build the founder and impact dashboards in the app. B: try the 30-day free trial once data is on AWS. C: subscribe now. |
+| D13 | Shared devices and attendance | Facilitators record attendance in the app. | Several learners share one device, so a login cannot be the only proof of attendance. Keep the facilitator register as the record; a learner login can add to it. |
+
+Recommendations for every decision are in [`docs/implementation-plan.md`](implementation-plan.md).
 
 ## New work (all meetings, not yet specced)
 
