@@ -33,6 +33,27 @@ overrides this plan. Status: **draft, not approved**.
 | D12 | Amazon Quick | **A.** Not now. Build the founder and impact dashboards in the app. Revisit with the free trial after Stage 3. | About a third of the credits per year for one user. |
 | D13 | Shared devices and attendance | Keep the facilitator register as the attendance record. A learner login can add to it, not replace it. | 2 or 3 learners share each device. |
 
+## Founder answers (29 October 2026)
+
+| # | Question | Answer |
+| --- | --- | --- |
+| 1 | What first | Phase 1 sign-off first (D1 = A). |
+| 2 | When to merge these docs | After Phase 1 sign-off. |
+| 3 | Lounge phones | One Huawei Nova 14. |
+| 4 | Stations | PS5-1, PS5-2, PS4, PC-1, PC-2, PC-3, PC-4 (founder's PC, overflow only) (D10). |
+| 5 | PC prices | Same as consoles: R10 / 20 min, R30 / 1 hour, R50 / 2 hours. |
+| 6 | Subscription and Holiday Special hours on PCs | Yes, on any station. |
+| 7 | When a session is logged | At the start; the timer starts straight away. |
+| 8 | End of time | Warning 5 minutes before; sound and vibration at the end until Loyiso taps "Done". |
+| 9 | Buying more time mid-session | Not answered yet. |
+| 10 | Playing past the time | Record minutes over, for the founder's records only. |
+| 11 | Discrepancies | Day's recorded cash does not match sessions logged; phone not synced for a set time. Not: sessions running over. |
+| 12 | How discrepancies reach the founder | Alerts screen when online. Phone notifications after the Huawei test (D5). |
+| 13 | 5th subscription | Waiting list. |
+| 14 | Daily cash target | Different amounts for weekdays, weekends and holidays. Amounts not given yet. |
+| 15 | Steering rules | Ask questions and offer options; no em dashes; South African English; offline-first; children's data and POPIA consent; AI tutor asks learners questions (D11). "Follow the PRD and never assume" and "plain language" not selected; to confirm. |
+| 16 | New-chat reminder | At the end of each finished task, Kiro writes a short summary file and says when to start a new chat. |
+
 ## Stages
 
 Each stage is specced (requirements, design, tasks) before building, and each
